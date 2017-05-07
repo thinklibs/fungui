@@ -1,11 +1,7 @@
 [package]
-name = "stylish"
+name = "stylish_syntax"
 version = "0.1.0"
 authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
 
-[workspace]
-members = [
-    "./syntax"
-]
-
 [dependencies]
+combine = "2.3.2"
