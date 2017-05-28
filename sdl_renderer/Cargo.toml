@@ -1,0 +1,9 @@
+[package]
+name = "sdl_renderer"
+version = "0.1.0"
+authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
+
+
+[dependencies]
+stylish = { path = "../" }
+sdl2 = "0.30.0"

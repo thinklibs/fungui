@@ -5,16 +5,18 @@ pub mod desc;
 pub mod style;
 
 
-use combine::{Stream, ParseError};
+use combine::{Stream, ParseError, State};
 use combine::primitives::{Error, SourcePosition, Info};
 use std::io::{Write, self};
 use std::hash::{Hash, Hasher};
+
+pub type PError<'a> = ParseError<State<&'a str>>;
 
 /// An identifier.
 ///
 /// An identifier is made up of either letters, numbers
 /// or `_`.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Ident {
     /// The identifier's value/name
     pub name: String,
@@ -45,7 +47,7 @@ impl Hash for Ident {
 ///
 /// This is used to provide better debugging support
 /// when an error in encounted.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Position {
     /// The line this relates to.
     ///

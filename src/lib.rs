@@ -10,12 +10,17 @@ pub struct Manager {
     // Has no parent, is the parent for all base nodes
     // in the system
     root: Node,
+
+    styles: Styles,
 }
 
 impl Manager {
     pub fn new() -> Manager {
         Manager {
             root: Node::root(),
+            styles: Styles {
+                styles: Vec::new(),
+            },
         }
     }
 
@@ -29,16 +34,239 @@ impl Manager {
         }
     }
 
-    pub fn render<V>(&mut self, visitor: &mut V)
+    pub fn query(&self) -> query::Query {
+        query::Query::new(self.root.clone())
+    }
+
+    pub fn load_styles<'a>(&mut self, name: &str, style_rules: &'a str) -> Result<(), syntax::PError<'a>> {
+        let styles = syntax::style::Document::parse(style_rules)?;
+        self.styles.styles.push((name.into(), styles));
+        Ok(())
+    }
+
+    pub fn render<V>(&mut self, visitor: &mut V, width: i32, height: i32)
         where V: RenderVisitor
     {
-        self.root.render(visitor, false); // TODO: Force dirty on resize?
+        let screen = Rect {
+            x: 0, y: 0,
+            width: width,
+            height: height
+        };
+        let inner = self.root.inner.borrow();
+        if let NodeValue::Element(ref e) = inner.value {
+            for c in &e.children {
+                c.render(&self.styles, visitor, screen, false);  // TODO: Force dirty on resize?
+            }
+        }
     }
 
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
 pub trait RenderVisitor {
     fn visit(&mut self, obj: &RenderObject);
+}
+
+struct Styles {
+    styles: Vec<(String, syntax::style::Document)>,
+}
+
+impl Styles {
+    // TODO: Remove boxing
+    fn find_matching_rules<'a, 'b>(&'a self, node: &'b Node) -> RuleIter<'b, Box<Iterator<Item=&'a syntax::style::Rule> +'a>> {
+        let iter = self.styles.iter()
+            .map(|v| &v.1)
+            .flat_map(|v| &v.rules);
+        RuleIter {
+            node: node,
+            rules: Box::new(iter) as _,
+        }
+    }
+}
+
+struct RuleIter<'a, I> {
+    node: &'a Node,
+    rules: I,
+}
+
+#[derive(Debug)]
+struct Rule<'a> {
+    syn: &'a syntax::style::Rule,
+    vars: HashMap<String, Value>,
+}
+
+impl <'a> Rule<'a> {
+    fn eval_value(&self, val: &syntax::style::Value) -> Value {
+        use syntax::style;
+        match *val {
+            style::Value::Float(f) => Value::Float(f),
+            style::Value::Integer(i) => Value::Integer(i),
+            style::Value::String(ref s) => Value::String(s.clone()),
+            style::Value::Variable(ref name) => self.vars.get(&name.name).unwrap().clone(),
+        }
+    }
+
+    fn eval(&self, expr: &syntax::style::Expr) -> Value {
+        use syntax::style;
+        match *expr {
+            style::Expr::Value(ref v) => self.eval_value(v),
+            style::Expr::Add(ref l, ref r) => {
+                let l = self.eval(&l.expr);
+                let r = self.eval(&r.expr);
+                match (l, r) {
+                    (Value::Float(l), Value::Float(r)) => Value::Float(l + r),
+                    (Value::Integer(l), Value::Integer(r)) => Value::Integer(l + r),
+                    (Value::String(l), Value::String(r)) => Value::String(l + &r),
+                    _ => panic!("Can't add these types"),
+                }
+            },
+            style::Expr::Sub(ref l, ref r) => {
+                let l = self.eval(&l.expr);
+                let r = self.eval(&r.expr);
+                match (l, r) {
+                    (Value::Float(l), Value::Float(r)) => Value::Float(l - r),
+                    (Value::Integer(l), Value::Integer(r)) => Value::Integer(l - r),
+                    _ => panic!("Can't subtract these types"),
+                }
+            },
+            style::Expr::Mul(ref l, ref r) => {
+                let l = self.eval(&l.expr);
+                let r = self.eval(&r.expr);
+                match (l, r) {
+                    (Value::Float(l), Value::Float(r)) => Value::Float(l * r),
+                    (Value::Integer(l), Value::Integer(r)) => Value::Integer(l * r),
+                    _ => panic!("Can't multiply these types"),
+                }
+            },
+            style::Expr::Div(ref l, ref r) => {
+                let l = self.eval(&l.expr);
+                let r = self.eval(&r.expr);
+                match (l, r) {
+                    (Value::Float(l), Value::Float(r)) => Value::Float(l / r),
+                    (Value::Integer(l), Value::Integer(r)) => Value::Integer(l / r),
+                    _ => panic!("Can't divide these types"),
+                }
+            },
+            style::Expr::Neg(ref l) => {
+                let l = self.eval(&l.expr);
+                match l {
+                    Value::Float(l) => Value::Float(-l),
+                    Value::Integer(l) => Value::Integer(-l),
+                    _ => panic!("Can't negative this type"),
+                }
+            },
+            _ => unimplemented!(),
+        }
+    }
+    fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
+        use syntax::Ident;
+        let ident = Ident {
+            name: name.into(),
+            .. Default::default()
+        };
+        if let Some(expr) = self.syn.styles.get(&ident) {
+            let val = self.eval(&expr.expr);
+            V::convert_from(val)
+        } else {
+            None
+        }
+    }
+}
+
+impl <'a, 'b, I> Iterator for RuleIter<'b, I>
+    where I: Iterator<Item=&'a syntax::style::Rule> + 'a
+{
+    type Item = Rule<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        use syntax::style;
+        'search:
+        while let Some(rule) = self.rules.next() {
+            let mut current = Some(self.node.clone());
+            let mut vars: HashMap<String, Value> = HashMap::new();
+            for m in rule.matchers.iter().rev() {
+                if let Some(cur) = current.take() {
+                    let cur = cur.inner.borrow();
+                    match (m, &cur.value) {
+                        (&style::Matcher::Text, &NodeValue::Text(..)) => {},
+                        (&style::Matcher::Element(ref e), &NodeValue::Element(ref ne)) => {
+                            if e.name.name != ne.name {
+                                continue 'search;
+                            }
+                            for (prop, v) in &e.properties {
+                                if let Some(nprop) = ne.properties.get(&prop.name) {
+                                    match (&v.value, nprop) {
+                                        (
+                                            &style::Value::Variable(ref name),
+                                            val
+                                        ) => {
+                                            vars.insert(name.name.clone(), val.clone());
+                                        },
+                                        (
+                                            &style::Value::Integer(i),
+                                            &Value::Integer(ni),
+                                        ) if ni == i => {},
+                                        (
+                                            &style::Value::Float(f),
+                                            &Value::Float(nf),
+                                        ) if nf == f => {},
+                                        (
+                                            &style::Value::String(ref s),
+                                            &Value::String(ref ns),
+                                        ) if ns == s => {},
+                                        _ => continue 'search,
+                                    }
+                                } else {
+                                    continue 'search;
+                                }
+                            }
+                        },
+                        _ => continue 'search,
+                    }
+                    current = cur.parent.as_ref()
+                        .and_then(|v| v.upgrade())
+                        .map(|v| Node { inner: v });
+                } else {
+                    continue 'search;
+                }
+            }
+            return Some(Rule {
+                syn: rule,
+                vars: vars,
+            });
+        }
+        None
+    }
+}
+
+fn parse_color(v: &str) -> Option<(u8, u8, u8, u8)> {
+    if v.chars().next() == Some('#') {
+        let col = &v[1..];
+        if col.len() == 6 || col.len() == 8 {
+            Some((
+                u8::from_str_radix(&col[..2], 16)
+                    .unwrap(),
+                u8::from_str_radix(&col[2..4], 16)
+                    .unwrap(),
+                u8::from_str_radix(&col[4..6], 16)
+                    .unwrap(),
+                if col.len() == 8 {
+                    u8::from_str_radix(&col[6..8], 16)
+                        .unwrap()
+                } else { 255 },
+            ))
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -48,30 +276,43 @@ pub struct Node {
 
 impl Node {
 
-    fn render<V>(&self, visitor: &mut V, force_dirty: bool)
+    fn render<V>(&self, styles: &Styles, visitor: &mut V, area: Rect, force_dirty: bool)
         where V: RenderVisitor
     {
         let mut dirty = force_dirty;
         {
-            let mut inner = self.inner.borrow_mut();
-            if inner.render_object.is_none() || force_dirty {
+            let missing_obj = {
+                self.inner.borrow()
+                    .render_object
+                    .is_none()
+            };
+            if missing_obj || force_dirty {
                 dirty = true;
-                inner.render_object = Some(RenderObject {
-                    name: if let NodeValue::Element(ref e) = inner.value {
-                        e.name.clone()
-                    } else {
-                        "$text$".into()
-                    },
-                });
-            }
-            if let Some(render) = inner.render_object.as_ref() {
-                visitor.visit(&render);
+                let mut obj = RenderObject::default();
+                for rule in styles.find_matching_rules(self) {
+                    obj.draw_rect = Rect {
+                        x: rule.get_value("x").unwrap_or(obj.draw_rect.x),
+                        y: rule.get_value("y").unwrap_or(obj.draw_rect.y),
+                        width: rule.get_value("width").unwrap_or(obj.draw_rect.width),
+                        height: rule.get_value("height").unwrap_or(obj.draw_rect.height),
+                    };
+                    obj.color = rule.get_value::<String>("color")
+                        .and_then(|v| parse_color(&v))
+                        .unwrap_or(obj.color);
+                }
+                obj.draw_rect.x += area.x;
+                obj.draw_rect.y += area.y;
+                let mut inner = self.inner.borrow_mut();
+                inner.render_object = Some(obj);
             }
         }
         let inner = self.inner.borrow();
-        if let NodeValue::Element(ref e) = inner.value {
-            for c in &e.children {
-                c.render(visitor, dirty);
+        if let Some(render) = inner.render_object.as_ref() {
+            visitor.visit(&render);
+            if let NodeValue::Element(ref e) = inner.value {
+                for c in &e.children {
+                    c.render(styles, visitor, render.draw_rect, dirty);
+                }
             }
         }
     }
@@ -100,11 +341,24 @@ impl Node {
             NodeValue::Element(ref e) => e.properties.get(key).and_then(|v| V::convert_from(v.clone())),
             NodeValue::Text(_) => None,
         }
+    }
 
+    pub fn set_property<V: PropertyValue>(&self, key: &str, value: V){
+        let mut inner = self.inner.borrow_mut();
+        inner.render_object = None;
+        match inner.value {
+            NodeValue::Element(ref mut e) => {e.properties.insert(key.into(), value.convert_into());},
+            NodeValue::Text(_) => {},
+        }
     }
 
     pub fn query(&self) -> query::Query {
         query::Query::new(self.clone())
+    }
+
+    pub fn from_str(s: &str) -> Result<Node, syntax::PError> {
+        syntax::desc::Document::parse(s)
+            .map(|v| Node::from_document(v))
     }
 
     pub fn from_document(desc: syntax::desc::Document) -> Node {
@@ -130,11 +384,7 @@ impl Node {
                     name: desc.name.name,
                     children: Vec::with_capacity(desc.nodes.len()),
                     properties: desc.properties.into_iter()
-                        .map(|(n, v)| (n.name, match v.value {
-                            syntax::desc::Value::Integer(val) => Value::Integer(val),
-                            syntax::desc::Value::Float(val) => Value::Float(val),
-                            syntax::desc::Value::String(val) => Value::String(val),
-                        }))
+                        .map(|(n, v)| (n.name, v.into()))
                         .collect()
                 }),
                 render_object: None,
@@ -192,9 +442,34 @@ pub enum Value {
     String(String),
 }
 
+impl From<syntax::desc::ValueType> for Value {
+    fn from(v: syntax::desc::ValueType) -> Value {
+        match v.value {
+            syntax::desc::Value::Integer(val) => Value::Integer(val),
+            syntax::desc::Value::Float(val) => Value::Float(val),
+            syntax::desc::Value::String(val) => Value::String(val),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RenderObject {
-    name: String, // TODO: TMP
+    pub draw_rect: Rect,
+    pub color: (u8, u8, u8, u8),
+}
+
+impl Default for RenderObject {
+    fn default() -> RenderObject {
+        RenderObject {
+            draw_rect: Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            color: (255, 255, 255, 255),
+        }
+    }
 }
 
 pub trait PropertyValue: Sized {
@@ -245,27 +520,3 @@ impl PropertyValue for String {
         Value::String(self)
     }
 }
-
-
-// #[test]
-// fn test() {
-//     let doc = syntax::desc::Document::parse(r#"
-// panel {
-//     icon(type="warning")
-//     "testing"
-// }
-
-// "#).unwrap();
-//     let node = Node::from_document(doc);
-//     let mut manager = Manager::new();
-//     manager.add_node(node);
-
-//     struct Printer;
-//     impl RenderVisitor for Printer {
-//         fn visit(&mut self, obj: &RenderObject) {
-//             println!("{:?}", obj);
-//         }
-//     }
-//     manager.render(&mut Printer);
-//     panic!("TODO");
-// }
