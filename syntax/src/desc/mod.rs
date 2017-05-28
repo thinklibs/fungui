@@ -32,18 +32,11 @@
 use combine::*;
 use combine::char::{char, digit, alpha_num, spaces, string, space};
 use combine::primitives::{Error, SourcePosition};
-use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
-use super::Position;
-
-impl From<SourcePosition> for Position {
-    fn from(v: SourcePosition) -> Position {
-        Position {
-            line_number: v.line,
-            column: v.column,
-        }
-    }
-}
+use super::{
+    Ident,
+    Position,
+};
 
 /// A UI description document
 ///
@@ -107,36 +100,6 @@ pub enum Node {
     /// Position is the position of the text within
     /// the source (used for debugging)
     Text(String, Position),
-}
-
-/// An identifier.
-///
-/// An identifier is made up of either letters, numbers
-/// or `_`.
-#[derive(Debug)]
-pub struct Ident {
-    /// The identifier's value/name
-    pub name: String,
-    /// The position of the identifier within the source.
-    ///
-    /// Used for debugging.
-    pub position: Position,
-}
-
-impl PartialEq for Ident {
-    fn eq(&self, o: &Ident) -> bool {
-        self.name == o.name
-    }
-}
-
-impl Eq for Ident {}
-
-impl Hash for Ident {
-    fn hash<H>(&self, state: &mut H)
-        where H: Hasher
-    {
-        self.name.hash(state);
-    }
 }
 
 /// Contains a value and debugging information
@@ -309,15 +272,13 @@ fn parse_float<I>(input: I) -> ParseResult<f64, I>
 
     let (val, input): (String, _) = try!(input.combine(|input| many1(digit()).parse_lazy(input).into()));
     buf.push_str(&val);
-    let (val, input): (Option<String>, _) = try!(input.combine(|input|
-        optional(char('.')
-            .with(many1(digit())))
+    let (val, input): (String, _) = try!(input.combine(|input|
+        char('.')
+            .with(many1(digit()))
             .parse_lazy(input).into()
     ));
-    if let Some(val) = val {
-        buf.push('.');
-        buf.push_str(&val);
-    }
+    buf.push('.');
+    buf.push_str(&val);
 
     let val: f64 = match buf.parse() {
         Ok(val) => val,

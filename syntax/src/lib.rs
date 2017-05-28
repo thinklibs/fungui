@@ -8,6 +8,37 @@ pub mod style;
 use combine::{Stream, ParseError};
 use combine::primitives::{Error, SourcePosition, Info};
 use std::io::{Write, self};
+use std::hash::{Hash, Hasher};
+
+/// An identifier.
+///
+/// An identifier is made up of either letters, numbers
+/// or `_`.
+#[derive(Debug)]
+pub struct Ident {
+    /// The identifier's value/name
+    pub name: String,
+    /// The position of the identifier within the source.
+    ///
+    /// Used for debugging.
+    pub position: Position,
+}
+
+impl PartialEq for Ident {
+    fn eq(&self, o: &Ident) -> bool {
+        self.name == o.name
+    }
+}
+
+impl Eq for Ident {}
+
+impl Hash for Ident {
+    fn hash<H>(&self, state: &mut H)
+        where H: Hasher
+    {
+        self.name.hash(state);
+    }
+}
 
 /// The position in the source file where the
 /// the ident/value/etc was defined.
@@ -24,6 +55,15 @@ pub struct Position {
     ///
     /// This starts at line 1 (not 0)
     pub column: i32,
+}
+
+impl From<SourcePosition> for Position {
+    fn from(v: SourcePosition) -> Position {
+        Position {
+            line_number: v.line,
+            column: v.column,
+        }
+    }
 }
 
 /// Formats the error in a user friendly format
@@ -138,7 +178,7 @@ pub fn format_parse_error<'a, I, W, S>(w: W, source: I, err: ParseError<S>) -> R
                         },
                         _ => unimplemented!(),
                     },
-                    _ => unimplemented!(),
+                    _ => {},
                 }
                 msg.push('\'');
                 if (i as isize) < len - 2 {
