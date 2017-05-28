@@ -39,23 +39,23 @@ root {
     width = 0,
     height = 0,
 }
-box(x=$x, y=$y, width=$width, height=$height) {
-    x = $x,
-    y = $y,
-    width = (800 - $x) - 15,
-    height = $height,
+box(x=x, y=y, width=width, height=height) {
+    x = x,
+    y = y,
+    width = (800 - x) - 15,
+    height = height,
     color = "#ff0000",
 }
-box > sub(x=$x, y=$y, width=$width, height=$height) {
-    x = $x,
-    y = $y,
-    width = $width,
-    height = $height,
+box > sub(x=x, y=y, width=width, height=height) {
+    x = x,
+    y = y,
+    width = width,
+    height = height,
     color = "#00ff00",
 }
 
-box > sub(color=$col) {
-    color = $col + "AA",
+box > sub(color=col) {
+    color = col + "AA",
 }
 "##).unwrap();
 

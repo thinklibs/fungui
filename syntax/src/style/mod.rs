@@ -10,9 +10,9 @@
 //!
 //! // Name of an element. Can be made up from any
 //! // letter, number or _
-//! root > panel > image(width=$width, height=$height) {
-//!     width = $width,
-//!     height = $height,
+//! root > panel > image(width=width, height=height) {
+//!     width = width,
+//!     height = height,
 //! }
 //! emoji(type="smile") {
 //!     image = "icons/smile.png",
@@ -440,8 +440,7 @@ fn value<I>(input: I) -> ParseResult<ValueType, I>
     let string = parser(parse_string)
         .map(|v| Value::String(v));
 
-    let variable = token('$')
-        .with(parser(ident))
+    let variable = parser(ident)
         .map(|v| Value::Variable(v));
 
     (
@@ -544,12 +543,12 @@ mod tests {
     fn test() {
         let source = r##"
 // Comments (only single line)
-root > panel > image(width=$width, height=$height) {
-    width = $width,
-    height = $height,
-    test_expr = $width + 6,
+root > panel > image(width=width, height=height) {
+    width = width,
+    height = height,
+    test_expr = width + 6,
     test_expr2 = -5 + -3,
-    test_expr3 = $height - 6,
+    test_expr3 = height - 6,
     test_expr4 = -3--4,
     test_expr5 = 6 * 3,
 
