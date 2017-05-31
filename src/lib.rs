@@ -20,8 +20,19 @@ impl Manager {
             root: Node::root(),
             styles: Styles {
                 styles: Vec::new(),
+                layouts: {
+                    let mut layouts: HashMap<String, Box<Fn(&RenderObject) -> Box<LayoutEngine>>> = HashMap::new();
+                    layouts.insert("absolute".to_owned(), Box::new(|_| Box::new(AbsoluteLayout)));
+                    layouts
+                },
             },
         }
+    }
+
+    pub fn add_layout_engine<F>(&mut self, name: &str, creator: F)
+        where F: Fn(&RenderObject) -> Box<LayoutEngine> + 'static
+    {
+        self.styles.layouts.insert(name.into(), Box::new(creator));
     }
 
     pub fn add_node(&mut self, node: Node) {
@@ -55,12 +66,35 @@ impl Manager {
         let inner = self.root.inner.borrow();
         if let NodeValue::Element(ref e) = inner.value {
             for c in &e.children {
-                c.render(&self.styles, visitor, screen, false);  // TODO: Force dirty on resize?
+                c.render(&self.styles, &mut AbsoluteLayout, visitor, screen, false);  // TODO: Force dirty on resize?
             }
         }
     }
-
 }
+
+pub trait LayoutEngine {
+    fn position_element(&mut self, obj: &RenderObject) -> Rect;
+}
+
+impl LayoutEngine for Box<LayoutEngine> {
+    fn position_element(&mut self, obj: &RenderObject) -> Rect {
+        (**self).position_element(obj)
+    }
+}
+
+struct AbsoluteLayout;
+
+impl LayoutEngine for AbsoluteLayout {
+    fn position_element(&mut self, obj: &RenderObject) -> Rect {
+        Rect {
+            x: obj.get_value::<i32>("x").unwrap_or(0),
+            y: obj.get_value::<i32>("y").unwrap_or(0),
+            width: obj.get_value::<i32>("width").unwrap_or(0),
+            height: obj.get_value::<i32>("height").unwrap_or(0),
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, Copy)]
 pub struct Rect {
@@ -76,6 +110,7 @@ pub trait RenderVisitor {
 
 struct Styles {
     styles: Vec<(String, syntax::style::Document)>,
+    layouts: HashMap<String, Box<Fn(&RenderObject) -> Box<LayoutEngine>>>,
 }
 
 impl Styles {
@@ -165,6 +200,7 @@ impl <'a> Rule<'a> {
             _ => unimplemented!(),
         }
     }
+
     fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
         use syntax::Ident;
         let ident = Ident {
@@ -245,30 +281,6 @@ impl <'a, 'b, I> Iterator for RuleIter<'b, I>
     }
 }
 
-fn parse_color(v: &str) -> Option<(u8, u8, u8, u8)> {
-    if v.chars().next() == Some('#') {
-        let col = &v[1..];
-        if col.len() == 6 || col.len() == 8 {
-            Some((
-                u8::from_str_radix(&col[..2], 16)
-                    .unwrap(),
-                u8::from_str_radix(&col[2..4], 16)
-                    .unwrap(),
-                u8::from_str_radix(&col[4..6], 16)
-                    .unwrap(),
-                if col.len() == 8 {
-                    u8::from_str_radix(&col[6..8], 16)
-                        .unwrap()
-                } else { 255 },
-            ))
-        } else {
-            None
-        }
-    } else {
-        None
-    }
-}
-
 #[derive(Clone)]
 pub struct Node {
     inner: Rc<RefCell<NodeInner>>,
@@ -276,8 +288,9 @@ pub struct Node {
 
 impl Node {
 
-    fn render<V>(&self, styles: &Styles, visitor: &mut V, area: Rect, force_dirty: bool)
-        where V: RenderVisitor
+    fn render<V, L>(&self, styles: &Styles, layout: &mut L, visitor: &mut V, area: Rect, force_dirty: bool)
+        where V: RenderVisitor,
+              L: LayoutEngine,
     {
         let mut dirty = force_dirty;
         {
@@ -290,18 +303,19 @@ impl Node {
                 dirty = true;
                 let mut obj = RenderObject::default();
                 for rule in styles.find_matching_rules(self) {
-                    obj.draw_rect = Rect {
-                        x: rule.get_value("x").unwrap_or(obj.draw_rect.x),
-                        y: rule.get_value("y").unwrap_or(obj.draw_rect.y),
-                        width: rule.get_value("width").unwrap_or(obj.draw_rect.width),
-                        height: rule.get_value("height").unwrap_or(obj.draw_rect.height),
-                    };
-                    obj.color = rule.get_value::<String>("color")
-                        .and_then(|v| parse_color(&v))
-                        .unwrap_or(obj.color);
+                    for key in rule.syn.styles.keys() {
+                        let key = &key.name;
+                        rule.get_value(key).map(|v| obj.vars.insert(key.clone(), v));
+                    }
                 }
+                obj.draw_rect = layout.position_element(&obj);
                 obj.draw_rect.x += area.x;
                 obj.draw_rect.y += area.y;
+                if let Some(layout) = obj.get_value::<String>("layout") {
+                    if let Some(engine) = styles.layouts.get(&layout) {
+                        obj.layout_engine = RefCell::new(engine(&obj));
+                    }
+                }
                 let mut inner = self.inner.borrow_mut();
                 inner.render_object = Some(obj);
             }
@@ -309,9 +323,10 @@ impl Node {
         let inner = self.inner.borrow();
         if let Some(render) = inner.render_object.as_ref() {
             visitor.visit(&render);
+            let mut layout_engine = render.layout_engine.borrow_mut();
             if let NodeValue::Element(ref e) = inner.value {
                 for c in &e.children {
-                    c.render(styles, visitor, render.draw_rect, dirty);
+                    c.render(styles, &mut *layout_engine, visitor, render.draw_rect, dirty);
                 }
             }
         }
@@ -452,10 +467,17 @@ impl From<syntax::desc::ValueType> for Value {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct RenderObject {
     pub draw_rect: Rect,
-    pub color: (u8, u8, u8, u8),
+    layout_engine: RefCell<Box<LayoutEngine>>,
+    vars: HashMap<String, Value>,
+}
+
+impl RenderObject {
+    pub fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
+        self.vars.get(name)
+            .and_then(|v| V::convert_from(v.clone()))
+    }
 }
 
 impl Default for RenderObject {
@@ -467,7 +489,8 @@ impl Default for RenderObject {
                 width: 0,
                 height: 0,
             },
-            color: (255, 255, 255, 255),
+            layout_engine: RefCell::new(Box::new(AbsoluteLayout)),
+            vars: HashMap::new(),
         }
     }
 }
