@@ -1,0 +1,12 @@
+[package]
+name = "stylish_webrender"
+version = "0.1.0"
+authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
+
+
+[dependencies]
+stylish = { path = "../" }
+sdl2 = "0.30.0"
+webrender = { git = "https://github.com/servo/webrender", rev = "d174622" }
+webrender_traits = { git = "https://github.com/servo/webrender", rev = "d174622" }
+gleam = "0.4.3"

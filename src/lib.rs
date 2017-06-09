@@ -6,22 +6,22 @@ use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-pub struct Manager {
+pub struct Manager<RInfo> {
     // Has no parent, is the parent for all base nodes
     // in the system
-    root: Node,
+    root: Node<RInfo>,
 
-    styles: Styles,
+    styles: Styles<RInfo>,
 }
 
-impl Manager {
-    pub fn new() -> Manager {
+impl <RInfo> Manager<RInfo> {
+    pub fn new() -> Manager<RInfo> {
         Manager {
             root: Node::root(),
             styles: Styles {
                 styles: Vec::new(),
                 layouts: {
-                    let mut layouts: HashMap<String, Box<Fn(&RenderObject) -> Box<LayoutEngine>>> = HashMap::new();
+                    let mut layouts: HashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>> = HashMap::new();
                     layouts.insert("absolute".to_owned(), Box::new(|_| Box::new(AbsoluteLayout)));
                     layouts
                 },
@@ -30,12 +30,12 @@ impl Manager {
     }
 
     pub fn add_layout_engine<F>(&mut self, name: &str, creator: F)
-        where F: Fn(&RenderObject) -> Box<LayoutEngine> + 'static
+        where F: Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>> + 'static
     {
         self.styles.layouts.insert(name.into(), Box::new(creator));
     }
 
-    pub fn add_node(&mut self, node: Node) {
+    pub fn add_node(&mut self, node: Node<RInfo>) {
         assert!(node.inner.borrow().parent.is_none(), "Node already has a parent");
         if let NodeValue::Element(ref mut e) = self.root.inner.borrow_mut().value {
             node.inner.borrow_mut().parent = Some(Rc::downgrade(&self.root.inner));
@@ -45,7 +45,7 @@ impl Manager {
         }
     }
 
-    pub fn query(&self) -> query::Query {
+    pub fn query(&self) -> query::Query<RInfo> {
         query::Query::new(self.root.clone())
     }
 
@@ -56,7 +56,7 @@ impl Manager {
     }
 
     pub fn render<V>(&mut self, visitor: &mut V, width: i32, height: i32)
-        where V: RenderVisitor
+        where V: RenderVisitor<RInfo>
     {
         let screen = Rect {
             x: 0, y: 0,
@@ -72,20 +72,20 @@ impl Manager {
     }
 }
 
-pub trait LayoutEngine {
-    fn position_element(&mut self, obj: &RenderObject) -> Rect;
+pub trait LayoutEngine<RInfo> {
+    fn position_element(&mut self, obj: &RenderObject<RInfo>) -> Rect;
 }
 
-impl LayoutEngine for Box<LayoutEngine> {
-    fn position_element(&mut self, obj: &RenderObject) -> Rect {
+impl <RInfo> LayoutEngine<RInfo> for Box<LayoutEngine<RInfo>> {
+    fn position_element(&mut self, obj: &RenderObject<RInfo>) -> Rect {
         (**self).position_element(obj)
     }
 }
 
 struct AbsoluteLayout;
 
-impl LayoutEngine for AbsoluteLayout {
-    fn position_element(&mut self, obj: &RenderObject) -> Rect {
+impl <RInfo> LayoutEngine<RInfo> for AbsoluteLayout {
+    fn position_element(&mut self, obj: &RenderObject<RInfo>) -> Rect {
         Rect {
             x: obj.get_value::<i32>("x").unwrap_or(0),
             y: obj.get_value::<i32>("y").unwrap_or(0),
@@ -104,18 +104,18 @@ pub struct Rect {
     pub height: i32,
 }
 
-pub trait RenderVisitor {
-    fn visit(&mut self, obj: &RenderObject);
+pub trait RenderVisitor<RInfo> {
+    fn visit(&mut self, obj: &mut RenderObject<RInfo>);
 }
 
-struct Styles {
+struct Styles<RInfo> {
     styles: Vec<(String, syntax::style::Document)>,
-    layouts: HashMap<String, Box<Fn(&RenderObject) -> Box<LayoutEngine>>>,
+    layouts: HashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>>,
 }
 
-impl Styles {
+impl <RInfo> Styles<RInfo> {
     // TODO: Remove boxing
-    fn find_matching_rules<'a, 'b>(&'a self, node: &'b Node) -> RuleIter<'b, Box<Iterator<Item=&'a syntax::style::Rule> +'a>> {
+    fn find_matching_rules<'a, 'b>(&'a self, node: &'b Node<RInfo>) -> RuleIter<'b, Box<Iterator<Item=&'a syntax::style::Rule> +'a>, RInfo> {
         let iter = self.styles.iter()
             .map(|v| &v.1)
             .flat_map(|v| &v.rules);
@@ -126,8 +126,8 @@ impl Styles {
     }
 }
 
-struct RuleIter<'a, I> {
-    node: &'a Node,
+struct RuleIter<'a, I, RInfo: 'a> {
+    node: &'a Node<RInfo>,
     rules: I,
 }
 
@@ -216,7 +216,7 @@ impl <'a> Rule<'a> {
     }
 }
 
-impl <'a, 'b, I> Iterator for RuleIter<'b, I>
+impl <'a, 'b, I, RInfo> Iterator for RuleIter<'b, I, RInfo>
     where I: Iterator<Item=&'a syntax::style::Rule> + 'a
 {
     type Item = Rule<'a>;
@@ -281,16 +281,23 @@ impl <'a, 'b, I> Iterator for RuleIter<'b, I>
     }
 }
 
-#[derive(Clone)]
-pub struct Node {
-    inner: Rc<RefCell<NodeInner>>,
+pub struct Node<RInfo> {
+    inner: Rc<RefCell<NodeInner<RInfo>>>,
 }
 
-impl Node {
+impl <RInfo> Clone for Node<RInfo> {
+    fn clone(&self) -> Self {
+        Node {
+            inner: self.inner.clone(),
+        }
+    }
+}
 
-    fn render<V, L>(&self, styles: &Styles, layout: &mut L, visitor: &mut V, area: Rect, force_dirty: bool)
-        where V: RenderVisitor,
-              L: LayoutEngine,
+impl <RInfo> Node<RInfo> {
+
+    fn render<V, L>(&self, styles: &Styles<RInfo>, layout: &mut L, visitor: &mut V, area: Rect, force_dirty: bool)
+        where V: RenderVisitor<RInfo>,
+              L: LayoutEngine<RInfo>,
     {
         let mut dirty = force_dirty;
         {
@@ -319,10 +326,13 @@ impl Node {
                 let mut inner = self.inner.borrow_mut();
                 inner.render_object = Some(obj);
             }
+            let mut inner = self.inner.borrow_mut();
+            if let Some(render) = inner.render_object.as_mut() {
+                visitor.visit(render);
+            }
         }
         let inner = self.inner.borrow();
         if let Some(render) = inner.render_object.as_ref() {
-            visitor.visit(&render);
             let mut layout_engine = render.layout_engine.borrow_mut();
             if let NodeValue::Element(ref e) = inner.value {
                 for c in &e.children {
@@ -332,7 +342,7 @@ impl Node {
         }
     }
 
-    pub fn add_child(&self, node: Node) {
+    pub fn add_child(&self, node: Node<RInfo>) {
         assert!(node.inner.borrow().parent.is_none(), "Node already has a parent");
         if let NodeValue::Element(ref mut e) = self.inner.borrow_mut().value {
             node.inner.borrow_mut().parent = Some(Rc::downgrade(&self.inner));
@@ -367,20 +377,20 @@ impl Node {
         }
     }
 
-    pub fn query(&self) -> query::Query {
+    pub fn query(&self) -> query::Query<RInfo> {
         query::Query::new(self.clone())
     }
 
-    pub fn from_str(s: &str) -> Result<Node, syntax::PError> {
+    pub fn from_str(s: &str) -> Result<Node<RInfo>, syntax::PError> {
         syntax::desc::Document::parse(s)
             .map(|v| Node::from_document(v))
     }
 
-    pub fn from_document(desc: syntax::desc::Document) -> Node {
+    pub fn from_document(desc: syntax::desc::Document) -> Node<RInfo> {
         Node::from_doc_element(desc.root)
     }
 
-    fn from_doc_text(desc: String) -> Node {
+    fn from_doc_text(desc: String) -> Node<RInfo> {
         Node {
             inner: Rc::new(RefCell::new(NodeInner {
                 parent: None,
@@ -390,7 +400,7 @@ impl Node {
         }
     }
 
-    fn from_doc_element(desc: syntax::desc::Element) -> Node {
+    fn from_doc_element(desc: syntax::desc::Element) -> Node<RInfo> {
 
         let node = Node {
             inner: Rc::new(RefCell::new(NodeInner {
@@ -418,7 +428,7 @@ impl Node {
         node
     }
 
-    fn root() -> Node {
+    fn root() -> Node<RInfo> {
         Node {
             inner: Rc::new(RefCell::new(NodeInner {
                 parent: None,
@@ -433,21 +443,21 @@ impl Node {
     }
 }
 
-struct NodeInner {
-    parent: Option<Weak<RefCell<NodeInner>>>,
-    value: NodeValue,
-    render_object: Option<RenderObject>,
+struct NodeInner<RInfo> {
+    parent: Option<Weak<RefCell<NodeInner<RInfo>>>>,
+    value: NodeValue<RInfo>,
+    render_object: Option<RenderObject<RInfo>>,
 }
 
-enum NodeValue {
-    Element(Element),
+enum NodeValue<RInfo> {
+    Element(Element<RInfo>),
     Text(String)
 }
 
-struct Element {
+struct Element<RInfo> {
     name: String,
     properties: HashMap<String, Value>,
-    children: Vec<Node>,
+    children: Vec<Node<RInfo>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -467,21 +477,22 @@ impl From<syntax::desc::ValueType> for Value {
     }
 }
 
-pub struct RenderObject {
+pub struct RenderObject<RInfo> {
     pub draw_rect: Rect,
-    layout_engine: RefCell<Box<LayoutEngine>>,
+    layout_engine: RefCell<Box<LayoutEngine<RInfo>>>,
     vars: HashMap<String, Value>,
+    pub render_info: Option<RInfo>,
 }
 
-impl RenderObject {
+impl <RInfo> RenderObject<RInfo> {
     pub fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
         self.vars.get(name)
             .and_then(|v| V::convert_from(v.clone()))
     }
 }
 
-impl Default for RenderObject {
-    fn default() -> RenderObject {
+impl <RInfo> Default for RenderObject<RInfo> {
+    fn default() -> RenderObject<RInfo> {
         RenderObject {
             draw_rect: Rect {
                 x: 0,
@@ -491,6 +502,7 @@ impl Default for RenderObject {
             },
             layout_engine: RefCell::new(Box::new(AbsoluteLayout)),
             vars: HashMap::new(),
+            render_info: Default::default(),
         }
     }
 }

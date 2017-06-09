@@ -6,7 +6,7 @@ authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
 [workspace]
 members = [
     "./syntax",
-    "./sdl_renderer"
+    "./webrender"
 ]
 
 [dependencies]

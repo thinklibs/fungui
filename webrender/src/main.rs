@@ -1,14 +1,17 @@
 extern crate stylish;
+extern crate stylish_webrender;
 extern crate sdl2;
+extern crate webrender;
+extern crate webrender_traits;
+extern crate gleam;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::render::{Canvas, BlendMode};
-use sdl2::video::Window;
-use sdl2::pixels::Color;
 
 use std::thread;
 use std::time::Duration;
+
+const TARGET_FPS: u32 = 60;
 
 struct GridLayout {
     count: usize,
@@ -17,7 +20,7 @@ struct GridLayout {
 }
 
 impl GridLayout {
-    fn new(obj: &stylish::RenderObject) -> Box<stylish::LayoutEngine> {
+    fn new<T>(obj: &stylish::RenderObject<T>) -> Box<stylish::LayoutEngine<T>> {
         let size = obj.get_value::<i32>("grid_size").unwrap_or(1);
         Box::new(GridLayout {
             count: 0,
@@ -27,8 +30,8 @@ impl GridLayout {
     }
 }
 
-impl stylish::LayoutEngine for GridLayout {
-    fn position_element(&mut self, _obj: &stylish::RenderObject) -> stylish::Rect {
+impl <T> stylish::LayoutEngine<T> for GridLayout {
+    fn position_element(&mut self, _obj: &stylish::RenderObject<T>) -> stylish::Rect {
         let pos = self.count as i32;
         self.count += 1;
         let w = self.width / self.grid_size;
@@ -45,13 +48,23 @@ fn main() {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
+    let gl_attr = video_subsystem.gl_attr();
+    gl_attr.set_stencil_size(8);
+    gl_attr.set_depth_size(24);
+    gl_attr.set_context_major_version(3);
+    gl_attr.set_context_minor_version(2);
+    gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
+
     let window = video_subsystem.window("SDL2", 800, 480)
+        .opengl()
+        .resizable()
         .build()
         .unwrap();
 
-    let mut canvas = window.into_canvas()
-        .accelerated()
-        .build()
+    let context = window.gl_create_context().unwrap();
+    window.gl_make_current(&context).unwrap();
+
+    let mut renderer = stylish_webrender::WebRenderer::new(|n| video_subsystem.gl_get_proc_address(n))
         .unwrap();
 
     let mut event_pump = sdl_context.event_pump()
@@ -101,7 +114,7 @@ root {
 box(x=x, y=y, width=width, height=height) {
     x = x,
     y = y,
-    width = (800 - x) - 15,
+    width = width,
     height = height,
     color = "#FFFFFF",
 }
@@ -133,8 +146,12 @@ sub(color=col) {
         .next()
         .unwrap();
 
+    let target_frame_time = Duration::from_secs(1) / TARGET_FPS;
+
     'main_loop:
     loop {
+        let start = ::std::time::Instant::now();
+
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit {..} | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => {
@@ -148,66 +165,15 @@ sub(color=col) {
             }
         }
 
-        let (width, height) = canvas.logical_size();
+        let (width, height) = window.drawable_size();
+        renderer.render(&mut manager, width, height);
 
-        canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
-        canvas.set_blend_mode(BlendMode::Blend);
-        canvas.clear();
-        {
-            manager.render(&mut CanvasRenderer {
-                canvas: &mut canvas,
-            }, width as i32, height as i32);
+        window.gl_swap_window();
+
+        let frame_time = start.elapsed();
+        if frame_time < target_frame_time {
+            thread::sleep(target_frame_time - frame_time);
         }
 
-        canvas.present();
-
-        thread::sleep(Duration::from_millis(15));
-    }
-}
-
-fn parse_color(v: &str) -> Option<(u8, u8, u8, u8)> {
-    if v.chars().next() == Some('#') {
-        let col = &v[1..];
-        if col.len() == 6 || col.len() == 8 {
-            Some((
-                u8::from_str_radix(&col[..2], 16)
-                    .unwrap(),
-                u8::from_str_radix(&col[2..4], 16)
-                    .unwrap(),
-                u8::from_str_radix(&col[4..6], 16)
-                    .unwrap(),
-                if col.len() == 8 {
-                    u8::from_str_radix(&col[6..8], 16)
-                        .unwrap()
-                } else { 255 },
-            ))
-        } else {
-            None
-        }
-    } else {
-        None
-    }
-}
-
-struct CanvasRenderer<'a> {
-    canvas: &'a mut Canvas<Window>,
-}
-
-impl <'a> stylish::RenderVisitor for CanvasRenderer<'a> {
-    fn visit(&mut self, obj: &stylish::RenderObject) {
-        use sdl2::rect::Rect;
-        let color = obj.get_value::<String>("color")
-            .and_then(|v| parse_color(&v))
-            .unwrap_or((255, 255, 255, 0));
-        self.canvas.set_draw_color(Color::RGBA(
-            color.0,
-            color.1,
-            color.2,
-            color.3,
-        ));
-        self.canvas.fill_rect(Rect::new(
-            obj.draw_rect.x, obj.draw_rect.y,
-            obj.draw_rect.width as u32, obj.draw_rect.height as u32,
-        )).unwrap();
     }
 }
