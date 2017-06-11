@@ -66,7 +66,16 @@ impl stylish_webrender::Assets for TestLoader {
                     width: img.width(),
                     height: img.height(),
                     components: stylish_webrender::Components::RGBA,
-                    data: img.into_raw(),
+                    data: {
+                        let mut data = img.into_raw();
+                        for d in data.chunks_mut(4) {
+                            let a = d[3] as u32;
+                            d[0] = ((d[0] as u32 * a) / 255) as u8;
+                            d[1] = ((d[1] as u32 * a) / 255) as u8;
+                            d[2] = ((d[2] as u32 * a) / 255) as u8;
+                        }
+                        data
+                    },
                 })
             },
             _ => {
