@@ -4,6 +4,7 @@ extern crate sdl2;
 extern crate webrender;
 extern crate webrender_traits;
 extern crate gleam;
+extern crate image;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -31,7 +32,7 @@ impl GridLayout {
 }
 
 impl <T> stylish::LayoutEngine<T> for GridLayout {
-    fn position_element(&mut self, _obj: &stylish::RenderObject<T>) -> stylish::Rect {
+    fn position_element(&mut self, _obj: &mut stylish::RenderObject<T>) -> stylish::Rect {
         let pos = self.count as i32;
         self.count += 1;
         let w = self.width / self.grid_size;
@@ -40,6 +41,43 @@ impl <T> stylish::LayoutEngine<T> for GridLayout {
             y: (pos / w) * self.grid_size,
             width: self.grid_size,
             height: self.grid_size,
+        }
+    }
+}
+
+struct TestLoader;
+
+impl stylish_webrender::Assets for TestLoader {
+    fn load_image(&mut self, name: &str) -> Option<stylish_webrender::Image> {
+        use std::fs;
+        use std::io::BufReader;
+        let file = BufReader::new(if let Ok(f) = fs::File::open(format!("res/{}.png", name)) {
+            f
+        } else { return None; });
+        let img = if let Ok(val) = image::load(file, image::ImageFormat::PNG) {
+            val
+        } else {
+            return None;
+        };
+        match img.color() {
+            image::ColorType::RGBA(..) | image::ColorType::GrayA(..) => {
+                let img = img.to_rgba();
+                Some(stylish_webrender::Image {
+                    width: img.width(),
+                    height: img.height(),
+                    components: stylish_webrender::Components::RGBA,
+                    data: img.into_raw(),
+                })
+            },
+            _ => {
+                let img = img.to_rgb();
+                Some(stylish_webrender::Image {
+                    width: img.width(),
+                    height: img.height(),
+                    components: stylish_webrender::Components::RGB,
+                    data: img.into_raw(),
+                })
+            },
         }
     }
 }
@@ -55,7 +93,7 @@ fn main() {
     gl_attr.set_context_minor_version(2);
     gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
 
-    let window = video_subsystem.window("SDL2", 800, 480)
+    let window = video_subsystem.window("Stylish", 800, 480)
         .opengl()
         .resizable()
         .build()
@@ -64,87 +102,60 @@ fn main() {
     let context = window.gl_create_context().unwrap();
     window.gl_make_current(&context).unwrap();
 
-    let mut renderer = stylish_webrender::WebRenderer::new(|n| video_subsystem.gl_get_proc_address(n))
+    let mut manager = stylish::Manager::new();
+    manager.add_layout_engine("grid", GridLayout::new);
+
+    let mut renderer = stylish_webrender::WebRenderer::new(
+        |n| video_subsystem.gl_get_proc_address(n),
+        TestLoader,
+        &mut manager,
+    )
         .unwrap();
 
     let mut event_pump = sdl_context.event_pump()
         .unwrap();
 
-    let mut manager = stylish::Manager::new();
-    manager.add_layout_engine("grid", GridLayout::new);
-
-    manager.add_node(stylish::Node::from_str(r##"
-box(x=15, y=15, width=100, height=150) {
-    sub(x=5, y=20, width=20, height=20)
-    sub(x=25, y=20, width=20, height=20, color="#0000FF")
-    sub(x=45, y=20, width=20, height=20, color="#FF00FF")
-
-    grid(x=5, y=50, width=20, height = 20, size=10) {
-        sub(color="#0000FF")
-        sub(color="#00FF00")
-        sub(color="#FF0000")
-        sub(color="#FFFF00")
+    manager.add_node_str(r##"
+top_bar {
+    menu
+    search {
+        icon
     }
-
-    grid(x=35, y=50, width=25, height = 20, size=5) {
-        sub(color="#0000FF")
-        sub(color="#00FF00")
-        sub(color="#FF0000")
-        sub(color="#FFFF00")
-        sub(color="#0000FF")
-        sub(color="#00FF00")
-        sub(color="#FF0000")
-        sub(color="#FFFF00")
-        sub(color="#0000FF")
-        sub(color="#00FF00")
-        sub(color="#FF0000")
-        sub(color="#FFFF00")
-        sub(color="#0000FF")
-        sub(color="#00FF00")
-        sub(color="#FF0000")
-        sub(color="#FFFF00")
-    }
-}
-"##).unwrap());
-    manager.load_styles("base", r##"
-root {
-    width = 0,
-    height = 0,
-}
-box(x=x, y=y, width=width, height=height) {
-    x = x,
-    y = y,
-    width = width,
-    height = height,
-    color = "#FFFFFF",
-}
-box > sub(x=x, y=y, width=width, height=height) {
-    x = x,
-    y = y,
-    width = width,
-    height = height,
-    color = "#00ff00",
-}
-
-grid(x=x, y=y, width=width, height=height, size=size) {
-    x = x,
-    y = y,
-    width = width,
-    height = height,
-    layout = "grid",
-    grid_size = size,
-}
-
-sub(color=col) {
-    color = col,
 }
 "##).unwrap();
-
-    let b = manager.query()
-        .name("box")
-        .matches()
-        .next()
-        .unwrap();
+    manager.load_styles("base", r##"
+root(width=width, height=height) > top_bar {
+    x = 0,
+    y = 0,
+    width = width,
+    height = 56,
+    background_color = "#4285f4",
+    shadow = shadows(
+        shadow(0.0, 4.0, rgba(0, 0, 0, 0.28), 8.0, 0.0, "outset"),
+        shadow(0.0, 0.0, rgba(0, 0, 0, 0.14), 4.0, 0.0, "outset")),
+}
+top_bar > menu {
+    x = 24,
+    y = 16,
+    width = 24,
+    height = 24,
+    image = "menu_white",
+}
+root(width=width, height=height) > top_bar > search {
+    width = width - 300,
+    height = 36,
+    x = 150,
+    y = 10,
+    background_color = rgba(255,255,255,0.15),
+}
+search > icon {
+    x = 24,
+    y = 6,
+    width = 24,
+    height = 24,
+    image = "search_white",
+}
+"##).unwrap();
 
     let target_frame_time = Duration::from_secs(1) / TARGET_FPS;
 
@@ -158,8 +169,6 @@ sub(color=col) {
                     break 'main_loop;
                 },
                 Event::MouseMotion{x, y, ..} => {
-                    b.set_property("x", x as i32);
-                    b.set_property("y", y as i32);
                 }
                 _ => {}
             }

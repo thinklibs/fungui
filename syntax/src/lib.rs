@@ -9,6 +9,7 @@ use combine::{Stream, ParseError, State};
 use combine::primitives::{Error, SourcePosition, Info};
 use std::io::{Write, self};
 use std::hash::{Hash, Hasher};
+use std::fmt::{self, Display, Formatter};
 
 pub type PError<'a> = ParseError<State<&'a str>>;
 
@@ -47,7 +48,7 @@ impl Hash for Ident {
 ///
 /// This is used to provide better debugging support
 /// when an error in encounted.
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Position {
     /// The line this relates to.
     ///
@@ -65,6 +66,12 @@ impl From<SourcePosition> for Position {
             line_number: v.line,
             column: v.column,
         }
+    }
+}
+
+impl Display for Position {
+    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
+        write!(fmt, "{}:{}", self.line_number, self.column)
     }
 }
 

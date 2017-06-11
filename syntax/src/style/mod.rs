@@ -26,6 +26,7 @@ use combine::*;
 use combine::char::{char, digit, alpha_num, spaces, string, space};
 use combine::primitives::{Error, SourcePosition};
 use std::collections::HashMap;
+use std::fmt::Debug;
 use super::{
     Ident,
     Position,
@@ -150,7 +151,9 @@ pub enum Expr {
 }
 
 fn parse_document<I>(input: I) -> ParseResult<Document, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+    where I: Stream<Item=char, Position=SourcePosition>,
+          I: Debug,
+          I::Range: Debug
 {
     spaces()
         .with(many1(try(parser(parse_rule)))) // TODO: Try sucks here
@@ -159,7 +162,9 @@ fn parse_document<I>(input: I) -> ParseResult<Document, I>
 }
 
 fn parse_rule<I>(input: I) -> ParseResult<Rule, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+    where I: Stream<Item=char, Position=SourcePosition>,
+          I: Debug,
+          I::Range: Debug
 {
     let comments = skip_many(parser(skip_comment));
 
@@ -218,7 +223,9 @@ fn ident<I>(input: I) -> ParseResult<Ident, I>
 }
 
 fn styles<I>(input: I) -> ParseResult<HashMap<Ident, ExprType>, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+    where I: Stream<Item=char, Position=SourcePosition>,
+          I: Debug,
+          I::Range: Debug
 {
 
     let (_, mut input) = try!(char('{').parse_lazy(input).into());
@@ -264,7 +271,9 @@ fn styles<I>(input: I) -> ParseResult<HashMap<Ident, ExprType>, I>
 }
 
 fn style_property<I>(input: I) -> ParseResult<(Ident, ExprType), I>
-    where I: Stream<Item=char, Position=SourcePosition>
+    where I: Stream<Item=char, Position=SourcePosition>,
+          I: Debug,
+          I::Range: Debug
 {;
 
     let prop = (
@@ -288,12 +297,17 @@ fn op_prio(c: char) -> u8 {
 }
 
 fn expr<I>(input: I) -> ParseResult<ExprType, I>
-    where I: Stream<Item=char, Position=SourcePosition> {
+    where I: Stream<Item=char, Position=SourcePosition>,
+          I: Debug,
+          I::Range: Debug
+{
     expr_inner(input, 255)
 }
 
 fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+    where I: Stream<Item=char, Position=SourcePosition>,
+          I: Debug,
+          I::Range: Debug
 {
 
     let (neg, mut input) = try!(
@@ -330,10 +344,10 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
 
         if let Some((pos, call, _)) = call {
             let (args, i) = try!(input.combine(|input|
-                (sep_by(
+                (sep_end_by(
                     spaces().with(parser(expr)),
-                    token(',')
-                ), token(')'))
+                    spaces().with(token(','))
+                ), spaces().with(token(')')))
                 .map(|v| v.0)
                 .parse_lazy(input).into()
             ));

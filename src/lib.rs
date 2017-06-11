@@ -1,10 +1,17 @@
 extern crate stylish_syntax as syntax;
+#[macro_use]
+extern crate error_chain;
 
 pub mod query;
+pub mod error;
+
+pub type SResult<T> = error::Result<T>;
+use error::{ErrorKind, ResultExt};
 
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::any::Any;
 
 pub struct Manager<RInfo> {
     // Has no parent, is the parent for all base nodes
@@ -12,6 +19,8 @@ pub struct Manager<RInfo> {
     root: Node<RInfo>,
 
     styles: Styles<RInfo>,
+
+    last_size: (i32, i32),
 }
 
 impl <RInfo> Manager<RInfo> {
@@ -25,7 +34,9 @@ impl <RInfo> Manager<RInfo> {
                     layouts.insert("absolute".to_owned(), Box::new(|_| Box::new(AbsoluteLayout)));
                     layouts
                 },
+                funcs: HashMap::new(),
             },
+            last_size: (0, 0),
         }
     }
 
@@ -33,6 +44,17 @@ impl <RInfo> Manager<RInfo> {
         where F: Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>> + 'static
     {
         self.styles.layouts.insert(name.into(), Box::new(creator));
+    }
+
+    pub fn add_func_raw<F>(&mut self, name: &str, func: F)
+        where F: Fn(Vec<Value>) -> SResult<Value> + 'static
+    {
+        self.styles.funcs.insert(name.into(), Box::new(func));
+    }
+
+    pub fn add_node_str<'a>(&mut self, node: &'a str) -> Result<(), syntax::PError<'a>> {
+        self.add_node(Node::from_str(node)?);
+        Ok(())
     }
 
     pub fn add_node(&mut self, node: Node<RInfo>) {
@@ -58,26 +80,30 @@ impl <RInfo> Manager<RInfo> {
     pub fn render<V>(&mut self, visitor: &mut V, width: i32, height: i32)
         where V: RenderVisitor<RInfo>
     {
+        let dirty = self.last_size != (width, height);
+        self.last_size = (width, height);
         let screen = Rect {
             x: 0, y: 0,
             width: width,
             height: height
         };
+        self.root.set_property("width", width);
+        self.root.set_property("height", height);
         let inner = self.root.inner.borrow();
         if let NodeValue::Element(ref e) = inner.value {
             for c in &e.children {
-                c.render(&self.styles, &mut AbsoluteLayout, visitor, screen, false);  // TODO: Force dirty on resize?
+                c.render(&self.styles, &mut AbsoluteLayout, visitor, screen, dirty);  // TODO: Force dirty on resize?
             }
         }
     }
 }
 
 pub trait LayoutEngine<RInfo> {
-    fn position_element(&mut self, obj: &RenderObject<RInfo>) -> Rect;
+    fn position_element(&mut self, obj: &mut RenderObject<RInfo>) -> Rect;
 }
 
 impl <RInfo> LayoutEngine<RInfo> for Box<LayoutEngine<RInfo>> {
-    fn position_element(&mut self, obj: &RenderObject<RInfo>) -> Rect {
+    fn position_element(&mut self, obj: &mut RenderObject<RInfo>) -> Rect {
         (**self).position_element(obj)
     }
 }
@@ -85,7 +111,7 @@ impl <RInfo> LayoutEngine<RInfo> for Box<LayoutEngine<RInfo>> {
 struct AbsoluteLayout;
 
 impl <RInfo> LayoutEngine<RInfo> for AbsoluteLayout {
-    fn position_element(&mut self, obj: &RenderObject<RInfo>) -> Rect {
+    fn position_element(&mut self, obj: &mut RenderObject<RInfo>) -> Rect {
         Rect {
             x: obj.get_value::<i32>("x").unwrap_or(0),
             y: obj.get_value::<i32>("y").unwrap_or(0),
@@ -106,11 +132,15 @@ pub struct Rect {
 
 pub trait RenderVisitor<RInfo> {
     fn visit(&mut self, obj: &mut RenderObject<RInfo>);
+    fn visit_end(&mut self, _obj: &mut RenderObject<RInfo>) {
+
+    }
 }
 
 struct Styles<RInfo> {
     styles: Vec<(String, syntax::style::Document)>,
     layouts: HashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>>,
+    funcs: HashMap<String, Box<Fn(Vec<Value>) -> SResult<Value>>>,
 }
 
 impl <RInfo> Styles<RInfo> {
@@ -118,7 +148,8 @@ impl <RInfo> Styles<RInfo> {
     fn find_matching_rules<'a, 'b>(&'a self, node: &'b Node<RInfo>) -> RuleIter<'b, Box<Iterator<Item=&'a syntax::style::Rule> +'a>, RInfo> {
         let iter = self.styles.iter()
             .map(|v| &v.1)
-            .flat_map(|v| &v.rules);
+            .flat_map(|v| &v.rules)
+            .rev();
         RuleIter {
             node: node,
             rules: Box::new(iter) as _,
@@ -138,78 +169,111 @@ struct Rule<'a> {
 }
 
 impl <'a> Rule<'a> {
-    fn eval_value(&self, val: &syntax::style::Value) -> Value {
+    fn eval_value(&self, val: &syntax::style::Value) -> SResult<Value> {
         use syntax::style;
-        match *val {
+        Ok(match *val {
             style::Value::Float(f) => Value::Float(f),
             style::Value::Integer(i) => Value::Integer(i),
             style::Value::String(ref s) => Value::String(s.clone()),
-            style::Value::Variable(ref name) => self.vars.get(&name.name).unwrap().clone(),
-        }
+            style::Value::Variable(ref name) => self.vars.get(&name.name)
+                .cloned()
+                .ok_or_else(|| ErrorKind::UnknownVariable(name.name.clone(), name.position))?,
+        })
     }
 
-    fn eval(&self, expr: &syntax::style::Expr) -> Value {
+    fn eval<T>(&self, styles: &Styles<T>, expr: &syntax::style::ExprType) -> SResult<Value> {
         use syntax::style;
-        match *expr {
+        match expr.expr {
             style::Expr::Value(ref v) => self.eval_value(v),
             style::Expr::Add(ref l, ref r) => {
-                let l = self.eval(&l.expr);
-                let r = self.eval(&r.expr);
+                let l = self.eval(styles, l)?;
+                let r = self.eval(styles, r)?;
                 match (l, r) {
-                    (Value::Float(l), Value::Float(r)) => Value::Float(l + r),
-                    (Value::Integer(l), Value::Integer(r)) => Value::Integer(l + r),
-                    (Value::String(l), Value::String(r)) => Value::String(l + &r),
-                    _ => panic!("Can't add these types"),
+                    (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l + r)),
+                    (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l + r)),
+                    (Value::String(l), Value::String(r)) => Ok(Value::String(l + &r)),
+                    _ => Err(ErrorKind::CantOp(
+                        "add".into(),
+                        expr.position,
+                    ).into()),
                 }
             },
             style::Expr::Sub(ref l, ref r) => {
-                let l = self.eval(&l.expr);
-                let r = self.eval(&r.expr);
+                let l = self.eval(styles, l)?;
+                let r = self.eval(styles, r)?;
                 match (l, r) {
-                    (Value::Float(l), Value::Float(r)) => Value::Float(l - r),
-                    (Value::Integer(l), Value::Integer(r)) => Value::Integer(l - r),
-                    _ => panic!("Can't subtract these types"),
+                    (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l - r)),
+                    (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l - r)),
+                    _ => Err(ErrorKind::CantOp(
+                        "subtract".into(),
+                        expr.position,
+                    ).into()),
                 }
             },
             style::Expr::Mul(ref l, ref r) => {
-                let l = self.eval(&l.expr);
-                let r = self.eval(&r.expr);
+                let l = self.eval(styles, l)?;
+                let r = self.eval(styles, r)?;
                 match (l, r) {
-                    (Value::Float(l), Value::Float(r)) => Value::Float(l * r),
-                    (Value::Integer(l), Value::Integer(r)) => Value::Integer(l * r),
-                    _ => panic!("Can't multiply these types"),
+                    (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l * r)),
+                    (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l * r)),
+                    _ => Err(ErrorKind::CantOp(
+                        "multiply".into(),
+                        expr.position,
+                    ).into()),
                 }
             },
             style::Expr::Div(ref l, ref r) => {
-                let l = self.eval(&l.expr);
-                let r = self.eval(&r.expr);
+                let l = self.eval(styles, l)?;
+                let r = self.eval(styles, r)?;
                 match (l, r) {
-                    (Value::Float(l), Value::Float(r)) => Value::Float(l / r),
-                    (Value::Integer(l), Value::Integer(r)) => Value::Integer(l / r),
-                    _ => panic!("Can't divide these types"),
+                    (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l / r)),
+                    (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l / r)),
+                    _ => Err(ErrorKind::CantOp(
+                        "divide".into(),
+                        expr.position,
+                    ).into()),
                 }
             },
             style::Expr::Neg(ref l) => {
-                let l = self.eval(&l.expr);
+                let l = self.eval(styles, l)?;
                 match l {
-                    Value::Float(l) => Value::Float(-l),
-                    Value::Integer(l) => Value::Integer(-l),
-                    _ => panic!("Can't negative this type"),
+                    Value::Float(l) => Ok(Value::Float(-l)),
+                    Value::Integer(l) => Ok(Value::Integer(-l)),
+                    _ => Err(ErrorKind::CantOp(
+                        "negate".into(),
+                        expr.position,
+                    ).into()),
                 }
             },
-            _ => unimplemented!(),
+            style::Expr::Call(ref name, ref args) => {
+                if let Some(func) = styles.funcs.get(&name.name) {
+                    let args = args.iter()
+                        .map(|v| self.eval(styles, &v))
+                        .collect::<SResult<Vec<_>>>()?;
+                    func(args)
+                        .chain_err(|| ErrorKind::FunctionFailed(expr.position))
+                } else {
+                    Err(ErrorKind::UnknownFunction(name.name.clone(), name.position).into())
+                }
+            },
         }
     }
 
-    fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
+    fn get_value<T, V: PropertyValue>(&self, styles: &Styles<T>, name: &str) -> Option<V> {
         use syntax::Ident;
         let ident = Ident {
             name: name.into(),
             .. Default::default()
         };
         if let Some(expr) = self.syn.styles.get(&ident) {
-            let val = self.eval(&expr.expr);
-            V::convert_from(val)
+            let val = self.eval(styles, expr);
+            match val {
+                Ok(val) => V::convert_from(&val),
+                Err(err) => {
+                    println!("{}", err);
+                    None
+                },
+            }
         } else {
             None
         }
@@ -299,6 +363,7 @@ impl <RInfo> Node<RInfo> {
         where V: RenderVisitor<RInfo>,
               L: LayoutEngine<RInfo>,
     {
+        use std::collections::hash_map::Entry;
         let mut dirty = force_dirty;
         {
             let missing_obj = {
@@ -312,18 +377,23 @@ impl <RInfo> Node<RInfo> {
                 for rule in styles.find_matching_rules(self) {
                     for key in rule.syn.styles.keys() {
                         let key = &key.name;
-                        rule.get_value(key).map(|v| obj.vars.insert(key.clone(), v));
+                        if let Entry::Vacant(e) = obj.vars.entry(key.clone()) {
+                            if let Some(v) = rule.get_value(styles, key) {
+                                e.insert(v);
+                            }
+                        }
                     }
                 }
-                obj.draw_rect = layout.position_element(&obj);
-                obj.draw_rect.x += area.x;
-                obj.draw_rect.y += area.y;
+                obj.draw_rect = layout.position_element(&mut obj);
                 if let Some(layout) = obj.get_value::<String>("layout") {
                     if let Some(engine) = styles.layouts.get(&layout) {
                         obj.layout_engine = RefCell::new(engine(&obj));
                     }
                 }
                 let mut inner = self.inner.borrow_mut();
+                if let NodeValue::Text(ref txt) = inner.value {
+                    obj.text = Some(txt.clone());
+                }
                 inner.render_object = Some(obj);
             }
             let mut inner = self.inner.borrow_mut();
@@ -331,14 +401,21 @@ impl <RInfo> Node<RInfo> {
                 visitor.visit(render);
             }
         }
-        let inner = self.inner.borrow();
-        if let Some(render) = inner.render_object.as_ref() {
-            let mut layout_engine = render.layout_engine.borrow_mut();
-            if let NodeValue::Element(ref e) = inner.value {
-                for c in &e.children {
-                    c.render(styles, &mut *layout_engine, visitor, render.draw_rect, dirty);
+        {
+            let inner = self.inner.borrow();
+            if let Some(render) = inner.render_object.as_ref() {
+                let mut layout_engine = render.layout_engine.borrow_mut();
+                if let NodeValue::Element(ref e) = inner.value {
+                    for c in &e.children {
+                        c.render(styles, &mut *layout_engine, visitor, render.draw_rect, dirty);
+                    }
                 }
             }
+        }
+
+        let mut inner = self.inner.borrow_mut();
+        if let Some(render) = inner.render_object.as_mut() {
+            visitor.visit_end(render);
         }
     }
 
@@ -363,7 +440,7 @@ impl <RInfo> Node<RInfo> {
     pub fn get_property<V: PropertyValue>(&self, key: &str) -> Option<V> {
         let inner = self.inner.borrow();
         match inner.value {
-            NodeValue::Element(ref e) => e.properties.get(key).and_then(|v| V::convert_from(v.clone())),
+            NodeValue::Element(ref e) => e.properties.get(key).and_then(|v| V::convert_from(&v)),
             NodeValue::Text(_) => None,
         }
     }
@@ -460,11 +537,49 @@ struct Element<RInfo> {
     children: Vec<Node<RInfo>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum Value {
     Integer(i32),
     Float(f64),
     String(String),
+    Any(Box<CustomValue>),
+}
+
+impl Value {
+    pub fn get_value<V: PropertyValue>(&self) -> Option<V> {
+         V::convert_from(self)
+    }
+
+    pub fn get_custom_value<V: CustomValue + 'static>(&self) -> Option<&V> {
+        if let Value::Any(ref v) = *self {
+            (**v).as_any().downcast_ref::<V>()
+        } else {
+            None
+        }
+    }
+}
+
+impl Clone for Value {
+    fn clone(&self) -> Value {
+        match *self {
+            Value::Integer(v) => Value::Integer(v),
+            Value::Float(v) => Value::Float(v),
+            Value::String(ref v) => Value::String(v.clone()),
+            Value::Any(ref v) => Value::Any((*v).clone()),
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, rhs: &Value) -> bool {
+        use Value::*;
+        match (self, rhs) {
+            (&Integer(a), &Integer(b)) => a == b,
+            (&Float(a), &Float(b)) => a == b,
+            (&String(ref a), &String(ref b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 impl From<syntax::desc::ValueType> for Value {
@@ -482,12 +597,20 @@ pub struct RenderObject<RInfo> {
     layout_engine: RefCell<Box<LayoutEngine<RInfo>>>,
     vars: HashMap<String, Value>,
     pub render_info: Option<RInfo>,
+    pub text: Option<String>,
 }
 
 impl <RInfo> RenderObject<RInfo> {
     pub fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
         self.vars.get(name)
-            .and_then(|v| V::convert_from(v.clone()))
+            .and_then(|v| V::convert_from(&v))
+    }
+
+    pub fn get_custom_value<V: CustomValue + 'static>(&self, name: &str) -> Option<&V> {
+        self.vars.get(name)
+            .and_then(|v| if let Value::Any(ref v) = *v {
+                (**v).as_any().downcast_ref::<V>()
+            } else { None })
     }
 }
 
@@ -503,23 +626,59 @@ impl <RInfo> Default for RenderObject<RInfo> {
             layout_engine: RefCell::new(Box::new(AbsoluteLayout)),
             vars: HashMap::new(),
             render_info: Default::default(),
+            text: None,
         }
     }
 }
 
 pub trait PropertyValue: Sized {
-    fn convert_from(v: Value) -> Option<Self>;
+    fn convert_from(v: &Value) -> Option<Self>;
     fn convert_into(self) -> Value;
 }
 
+pub trait Anyable: Any {
+    fn as_any(&self) -> &Any;
+}
+
+impl <T: Any> Anyable for T {
+    fn as_any(&self) -> &Any {
+        self
+    }
+}
+
+pub trait CustomValue: Anyable {
+    fn clone(&self) -> Box<CustomValue>;
+}
+
+impl ::std::fmt::Debug for Box<CustomValue> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "CustomValue")
+    }
+}
+
+impl <T: Clone + 'static> CustomValue for Vec<T> {
+    fn clone(&self) -> Box<CustomValue> {
+        Box::new(Clone::clone(self))
+    }
+}
+
+impl <T: CustomValue + 'static> PropertyValue for T {
+    fn convert_from(_v: &Value) -> Option<Self> {
+        panic!("Can't convert into T")
+    }
+    fn convert_into(self) -> Value {
+        Value::Any(Box::new(self))
+    }
+}
+
 impl PropertyValue for Value {
-    fn convert_from(v: Value) -> Option<Self> { Some(v) }
+    fn convert_from(v: &Value) -> Option<Self> { Some(v.clone()) }
     fn convert_into(self) -> Value { self }
 }
 
 impl PropertyValue for i32 {
-    fn convert_from(v: Value) -> Option<Self> {
-        match v {
+    fn convert_from(v: &Value) -> Option<Self> {
+        match *v {
             Value::Integer(v) => Some(v),
             _ => None,
         }
@@ -531,8 +690,8 @@ impl PropertyValue for i32 {
 }
 
 impl PropertyValue for f64 {
-    fn convert_from(v: Value) -> Option<Self> {
-        match v {
+    fn convert_from(v: &Value) -> Option<Self> {
+        match *v {
             Value::Float(v) => Some(v),
             _ => None,
         }
@@ -544,9 +703,9 @@ impl PropertyValue for f64 {
 }
 
 impl PropertyValue for String {
-    fn convert_from(v: Value) -> Option<Self> {
-        match v {
-            Value::String(v) => Some(v),
+    fn convert_from(v: &Value) -> Option<Self> {
+        match *v {
+            Value::String(ref v) => Some(v.clone()),
             _ => None,
         }
     }
