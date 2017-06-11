@@ -44,9 +44,6 @@ pub struct WebRenderer<A> {
     frame_id: Epoch,
 
     images: HashMap<String, ImageKey>,
-
-    tmp_font: FontKey,
-    tmp_font_info: stb_truetype::FontInfo<Vec<u8>>,
 }
 
 impl <A: Assets> WebRenderer<A> {
@@ -83,14 +80,6 @@ impl <A: Assets> WebRenderer<A> {
         let pipeline = PipelineId(0, 0);
         api.set_root_pipeline(pipeline);
 
-        let mut tmp = vec![];
-        ::std::io::Read::read_to_end(&mut ::std::fs::File::open("res/indie_flower.ttf").unwrap(), &mut tmp).unwrap();
-
-        let info = stb_truetype::FontInfo::new(tmp.clone(), 0).unwrap();
-
-        let tmp_font = api.generate_font_key();
-        api.add_raw_font(tmp_font, tmp, 0);
-
         Ok(WebRenderer {
             assets: assets,
             renderer: renderer,
@@ -98,9 +87,6 @@ impl <A: Assets> WebRenderer<A> {
             frame_id: Epoch(0),
 
             images: HashMap::new(),
-
-            tmp_font: tmp_font,
-            tmp_font_info: info,
         })
     }
 
@@ -126,8 +112,6 @@ impl <A: Assets> WebRenderer<A> {
             builder: &mut builder,
             assets: &mut self.assets,
             images: &mut self.images,
-            font: self.tmp_font,
-            font_info: &self.tmp_font_info,
             clip_rect: clip,
             offset: Vec::with_capacity(16),
         }, width as i32, height as i32);
@@ -166,10 +150,7 @@ struct WebBuilder<'a, A: 'a> {
     assets: &'a mut A,
     images: &'a mut HashMap<String, ImageKey>,
 
-    font: FontKey,
-    font_info: &'a stb_truetype::FontInfo<Vec<u8>>,
     clip_rect: LayoutRect,
-
     offset: Vec<LayoutPoint>,
 }
 
@@ -296,140 +277,6 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         self.offset.pop();
     }
 }
-/*
-        let color = obj.get_value::<String>("color")
-            .and_then(|v| parse_color(&v))
-            .unwrap_or((255, 255, 255, 0));
-        if color.3 == 0 {
-            return;
-        }
-
-        let rect = LayoutRect::new(
-            LayoutPoint::new(obj.draw_rect.x as f32, obj.draw_rect.y as f32),
-            LayoutSize::new(obj.draw_rect.width as f32, obj.draw_rect.height as f32),
-        );
-
-        if let Some(txt) = obj.text.as_ref() {
-            let font_info = &self.font_info;
-            let chars = txt.chars()
-                .scan((0.0, None), |state, v| {
-                    let index = font_info.find_glyph_index(v as u32);
-                    let scale = font_info.scale_for_pixel_height(16.0);
-                    state.0 = if let Some(last) = state.1 {
-                        let kern = font_info.get_glyph_kern_advance(last, index);
-                        state.0 + kern as f32 * scale
-                    } else {
-                        state.0
-                    };
-                    state.1 = Some(index);
-
-                    let pos = state.0;
-                    state.0 += font_info.get_glyph_h_metrics(index).advance_width as f32 * scale + 1.0;
-
-                    Some(GlyphInstance {
-                        index: index,
-                        point: LayoutPoint::new(
-                            obj.draw_rect.x as f32 + pos,
-                            obj.draw_rect.y as f32
-                        ),
-                    })
-                })
-                .collect::<Vec<_>>();
-            let clip = self.builder.push_clip_region(&self.clip_rect, None, None);
-            self.builder.push_text(
-                rect,
-                clip,
-                &chars,
-                self.font,
-                ColorF::new(
-                    color.0 as f32 / 255.0,
-                    color.1 as f32 / 255.0,
-                    color.2 as f32 / 255.0,
-                    color.3 as f32 / 255.0,
-                ),
-                app_units::Au::from_px(16),
-                0.0,
-                None
-            );
-            return;
-        }
-
-        let g = self.builder.create_gradient(
-            LayoutPoint::zero(),
-            LayoutPoint::new(0.0, obj.draw_rect.height as f32),
-            vec![
-                GradientStop {
-                    offset: 0.0,
-                    color: ColorF::new(
-                        color.0 as f32 / 255.0,
-                        color.1 as f32 / 255.0,
-                        color.2 as f32 / 255.0,
-                        color.3 as f32 / 255.0,
-                    ),
-                },
-                GradientStop {
-                    offset: 1.0,
-                    color: ColorF::new(
-                        0.0, 0.0, 0.0, 1.0
-                    ),
-                }
-            ],
-            ExtendMode::Clamp,
-        );
-        let clip = self.builder.push_clip_region(&self.clip_rect, None, None);
-        self.builder.push_gradient(
-            rect, clip,
-            g,
-            LayoutSize::new(obj.draw_rect.width as f32, obj.draw_rect.height as f32),
-            LayoutSize::zero(),
-        );
-
-        // let clip = self.builder.push_clip_region(&self.clip_rect, None, None);
-        // let c = ColorF::new(
-        //     color.0 as f32 / 255.0,
-        //     color.1 as f32 / 255.0,
-        //     color.2 as f32 / 255.0,
-        //     color.3 as f32 / 255.0,
-        // );
-        // self.builder.push_rect(rect, clip, c);
-
-        let clip = self.builder.push_clip_region(&self.clip_rect, None, None);
-        let c = ColorF::new(
-            1.0 - color.0 as f32 / 255.0,
-            1.0 - color.1 as f32 / 255.0,
-            1.0 - color.2 as f32 / 255.0,
-            color.3 as f32 / 255.0,
-        );
-        let border_side = BorderSide {
-            color: c,
-            style: BorderStyle::Inset,
-        };
-        self.builder.push_border(
-            rect, clip,
-            BorderWidths {
-                left: 1.0,
-                top: 1.0,
-                right: 1.0,
-                bottom: 1.0,
-            },
-            BorderDetails::Normal(
-                NormalBorder {
-                    left: border_side,
-                    right: border_side,
-                    top: border_side,
-                    bottom: border_side,
-                    radius: BorderRadius {
-                        top_left: LayoutSize::new(2.0, 2.0),
-                        top_right: LayoutSize::new(2.0, 2.0),
-                        bottom_left: LayoutSize::new(2.0, 2.0),
-                        bottom_right: LayoutSize::new(2.0, 2.0),
-                    }
-                }
-            )
-        );
-    }
-}
-*/
 
 struct Dummy;
 impl RenderNotifier for Dummy {

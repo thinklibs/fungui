@@ -19,7 +19,7 @@ impl stylish::CustomValue for Shadow {
     }
 }
 pub fn shadows(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
-    let mut shadows =params.into_iter()
+    let shadows =params.into_iter()
         .map(|v|
             v.get_custom_value::<Shadow>()
                 .map(|v| v.clone())
