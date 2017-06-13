@@ -32,11 +32,11 @@ impl GridLayout {
 }
 
 impl <T> stylish::LayoutEngine<T> for GridLayout {
-    fn position_element(&mut self, _obj: &mut stylish::RenderObject<T>) -> stylish::Rect {
+    fn position_element(&mut self, obj: &mut stylish::RenderObject<T>) {
         let pos = self.count as i32;
         self.count += 1;
         let w = self.width / self.grid_size;
-        stylish::Rect {
+        obj.draw_rect = stylish::Rect {
             x: (pos % w) * self.grid_size,
             y: (pos / w) * self.grid_size,
             width: self.grid_size,

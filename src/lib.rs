@@ -4,7 +4,10 @@ extern crate error_chain;
 
 pub mod query;
 pub mod error;
+mod rule;
+use rule::*;
 
+/// The error type used by stylish
 pub type SResult<T> = error::Result<T>;
 use error::{ErrorKind, ResultExt};
 
@@ -13,17 +16,17 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::any::Any;
 
+/// Stores loaded nodes and manages the layout.
 pub struct Manager<RInfo> {
     // Has no parent, is the parent for all base nodes
     // in the system
     root: Node<RInfo>,
-
     styles: Styles<RInfo>,
-
     last_size: (i32, i32),
 }
 
 impl <RInfo> Manager<RInfo> {
+    /// Creates a new manager with an empty root node.
     pub fn new() -> Manager<RInfo> {
         Manager {
             root: Node::root(),
@@ -40,23 +43,34 @@ impl <RInfo> Manager<RInfo> {
         }
     }
 
+    /// Adds a new function that can be used to create a layout engine.
+    ///
+    /// A layout engine is used to position elements within an element.
+    ///
+    /// The layout engine can be selected by using the `layout` attribute.
     pub fn add_layout_engine<F>(&mut self, name: &str, creator: F)
         where F: Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>> + 'static
     {
         self.styles.layouts.insert(name.into(), Box::new(creator));
     }
 
+    /// Add a function that can be called by styles
     pub fn add_func_raw<F>(&mut self, name: &str, func: F)
         where F: Fn(Vec<Value>) -> SResult<Value> + 'static
     {
         self.styles.funcs.insert(name.into(), Box::new(func));
     }
 
+    /// Adds the node to the root node of this manager.
+    ///
+    /// The node is created from the passed string.
+    /// See [`add_node_str`](struct.Node.html#from_str)
     pub fn add_node_str<'a>(&mut self, node: &'a str) -> Result<(), syntax::PError<'a>> {
         self.add_node(Node::from_str(node)?);
         Ok(())
     }
 
+    /// Adds the node to the root node of this manager
     pub fn add_node(&mut self, node: Node<RInfo>) {
         assert!(node.inner.borrow().parent.is_none(), "Node already has a parent");
         if let NodeValue::Element(ref mut e) = self.root.inner.borrow_mut().value {
@@ -67,16 +81,20 @@ impl <RInfo> Manager<RInfo> {
         }
     }
 
+    /// Starts a query from the root of this manager
     pub fn query(&self) -> query::Query<RInfo> {
         query::Query::new(self.root.clone())
     }
 
+    /// Loads a set of styles from the given string.
     pub fn load_styles<'a>(&mut self, name: &str, style_rules: &'a str) -> Result<(), syntax::PError<'a>> {
         let styles = syntax::style::Document::parse(style_rules)?;
         self.styles.styles.push((name.into(), styles));
         Ok(())
     }
 
+    /// Renders the nodes in this manager by passing the
+    /// layout and styles to the passed visitor.
     pub fn render<V>(&mut self, visitor: &mut V, width: i32, height: i32)
         where V: RenderVisitor<RInfo>
     {
@@ -92,27 +110,34 @@ impl <RInfo> Manager<RInfo> {
         let inner = self.root.inner.borrow();
         if let NodeValue::Element(ref e) = inner.value {
             for c in &e.children {
-                c.render(&self.styles, &mut AbsoluteLayout, visitor, screen, dirty);  // TODO: Force dirty on resize?
+                c.render(&self.styles, &mut AbsoluteLayout, visitor, screen, dirty);
             }
         }
     }
 }
 
+/// Used to position an element within another element.
 pub trait LayoutEngine<RInfo> {
-    fn position_element(&mut self, obj: &mut RenderObject<RInfo>) -> Rect;
+    /// Called when the element needs to be positioned. Should
+    /// set the value of `draw_rect` on the passed object.
+    fn position_element(&mut self, obj: &mut RenderObject<RInfo>);
 }
 
 impl <RInfo> LayoutEngine<RInfo> for Box<LayoutEngine<RInfo>> {
-    fn position_element(&mut self, obj: &mut RenderObject<RInfo>) -> Rect {
+    fn position_element(&mut self, obj: &mut RenderObject<RInfo>) {
         (**self).position_element(obj)
     }
 }
 
+/// The default layout.
+///
+/// Copies the values of `x`, `y`, `width` and `height` directly
+/// to the element's layout.
 struct AbsoluteLayout;
 
 impl <RInfo> LayoutEngine<RInfo> for AbsoluteLayout {
-    fn position_element(&mut self, obj: &mut RenderObject<RInfo>) -> Rect {
-        Rect {
+    fn position_element(&mut self, obj: &mut RenderObject<RInfo>) {
+        obj.draw_rect = Rect {
             x: obj.get_value::<i32>("x").unwrap_or(0),
             y: obj.get_value::<i32>("y").unwrap_or(0),
             width: obj.get_value::<i32>("width").unwrap_or(0),
@@ -121,7 +146,7 @@ impl <RInfo> LayoutEngine<RInfo> for AbsoluteLayout {
     }
 }
 
-
+/// The position and size of an element
 #[derive(Debug, Clone, Copy)]
 pub struct Rect {
     pub x: i32,
@@ -130,11 +155,14 @@ pub struct Rect {
     pub height: i32,
 }
 
+/// Called for every element in a manager to allow them to
+/// be rendered.
 pub trait RenderVisitor<RInfo> {
+    /// Called with an element to be rendered.
     fn visit(&mut self, obj: &mut RenderObject<RInfo>);
-    fn visit_end(&mut self, _obj: &mut RenderObject<RInfo>) {
-
-    }
+    /// Called after all of the passed element's children
+    /// have been visited.
+    fn visit_end(&mut self, _obj: &mut RenderObject<RInfo>) {}
 }
 
 struct Styles<RInfo> {
@@ -157,194 +185,9 @@ impl <RInfo> Styles<RInfo> {
     }
 }
 
-struct RuleIter<'a, I, RInfo: 'a> {
-    node: &'a Node<RInfo>,
-    rules: I,
-}
-
-#[derive(Debug)]
-struct Rule<'a> {
-    syn: &'a syntax::style::Rule,
-    vars: HashMap<String, Value>,
-}
-
-impl <'a> Rule<'a> {
-    fn eval_value(&self, val: &syntax::style::Value) -> SResult<Value> {
-        use syntax::style;
-        Ok(match *val {
-            style::Value::Float(f) => Value::Float(f),
-            style::Value::Integer(i) => Value::Integer(i),
-            style::Value::String(ref s) => Value::String(s.clone()),
-            style::Value::Variable(ref name) => self.vars.get(&name.name)
-                .cloned()
-                .ok_or_else(|| ErrorKind::UnknownVariable(name.name.clone(), name.position))?,
-        })
-    }
-
-    fn eval<T>(&self, styles: &Styles<T>, expr: &syntax::style::ExprType) -> SResult<Value> {
-        use syntax::style;
-        match expr.expr {
-            style::Expr::Value(ref v) => self.eval_value(v),
-            style::Expr::Add(ref l, ref r) => {
-                let l = self.eval(styles, l)?;
-                let r = self.eval(styles, r)?;
-                match (l, r) {
-                    (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l + r)),
-                    (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l + r)),
-                    (Value::String(l), Value::String(r)) => Ok(Value::String(l + &r)),
-                    _ => Err(ErrorKind::CantOp(
-                        "add".into(),
-                        expr.position,
-                    ).into()),
-                }
-            },
-            style::Expr::Sub(ref l, ref r) => {
-                let l = self.eval(styles, l)?;
-                let r = self.eval(styles, r)?;
-                match (l, r) {
-                    (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l - r)),
-                    (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l - r)),
-                    _ => Err(ErrorKind::CantOp(
-                        "subtract".into(),
-                        expr.position,
-                    ).into()),
-                }
-            },
-            style::Expr::Mul(ref l, ref r) => {
-                let l = self.eval(styles, l)?;
-                let r = self.eval(styles, r)?;
-                match (l, r) {
-                    (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l * r)),
-                    (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l * r)),
-                    _ => Err(ErrorKind::CantOp(
-                        "multiply".into(),
-                        expr.position,
-                    ).into()),
-                }
-            },
-            style::Expr::Div(ref l, ref r) => {
-                let l = self.eval(styles, l)?;
-                let r = self.eval(styles, r)?;
-                match (l, r) {
-                    (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l / r)),
-                    (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l / r)),
-                    _ => Err(ErrorKind::CantOp(
-                        "divide".into(),
-                        expr.position,
-                    ).into()),
-                }
-            },
-            style::Expr::Neg(ref l) => {
-                let l = self.eval(styles, l)?;
-                match l {
-                    Value::Float(l) => Ok(Value::Float(-l)),
-                    Value::Integer(l) => Ok(Value::Integer(-l)),
-                    _ => Err(ErrorKind::CantOp(
-                        "negate".into(),
-                        expr.position,
-                    ).into()),
-                }
-            },
-            style::Expr::Call(ref name, ref args) => {
-                if let Some(func) = styles.funcs.get(&name.name) {
-                    let args = args.iter()
-                        .map(|v| self.eval(styles, &v))
-                        .collect::<SResult<Vec<_>>>()?;
-                    func(args)
-                        .chain_err(|| ErrorKind::FunctionFailed(expr.position))
-                } else {
-                    Err(ErrorKind::UnknownFunction(name.name.clone(), name.position).into())
-                }
-            },
-        }
-    }
-
-    fn get_value<T, V: PropertyValue>(&self, styles: &Styles<T>, name: &str) -> Option<V> {
-        use syntax::Ident;
-        let ident = Ident {
-            name: name.into(),
-            .. Default::default()
-        };
-        if let Some(expr) = self.syn.styles.get(&ident) {
-            let val = self.eval(styles, expr);
-            match val {
-                Ok(val) => V::convert_from(&val),
-                Err(err) => {
-                    println!("{}", err);
-                    None
-                },
-            }
-        } else {
-            None
-        }
-    }
-}
-
-impl <'a, 'b, I, RInfo> Iterator for RuleIter<'b, I, RInfo>
-    where I: Iterator<Item=&'a syntax::style::Rule> + 'a
-{
-    type Item = Rule<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        use syntax::style;
-        'search:
-        while let Some(rule) = self.rules.next() {
-            let mut current = Some(self.node.clone());
-            let mut vars: HashMap<String, Value> = HashMap::new();
-            for m in rule.matchers.iter().rev() {
-                if let Some(cur) = current.take() {
-                    let cur = cur.inner.borrow();
-                    match (m, &cur.value) {
-                        (&style::Matcher::Text, &NodeValue::Text(..)) => {},
-                        (&style::Matcher::Element(ref e), &NodeValue::Element(ref ne)) => {
-                            if e.name.name != ne.name {
-                                continue 'search;
-                            }
-                            for (prop, v) in &e.properties {
-                                if let Some(nprop) = ne.properties.get(&prop.name) {
-                                    match (&v.value, nprop) {
-                                        (
-                                            &style::Value::Variable(ref name),
-                                            val
-                                        ) => {
-                                            vars.insert(name.name.clone(), val.clone());
-                                        },
-                                        (
-                                            &style::Value::Integer(i),
-                                            &Value::Integer(ni),
-                                        ) if ni == i => {},
-                                        (
-                                            &style::Value::Float(f),
-                                            &Value::Float(nf),
-                                        ) if nf == f => {},
-                                        (
-                                            &style::Value::String(ref s),
-                                            &Value::String(ref ns),
-                                        ) if ns == s => {},
-                                        _ => continue 'search,
-                                    }
-                                } else {
-                                    continue 'search;
-                                }
-                            }
-                        },
-                        _ => continue 'search,
-                    }
-                    current = cur.parent.as_ref()
-                        .and_then(|v| v.upgrade())
-                        .map(|v| Node { inner: v });
-                } else {
-                    continue 'search;
-                }
-            }
-            return Some(Rule {
-                syn: rule,
-                vars: vars,
-            });
-        }
-        None
-    }
-}
-
+/// A node representing an element.
+///
+/// Can be cloned to duplicate the reference to the node.
 pub struct Node<RInfo> {
     inner: Rc<RefCell<NodeInner<RInfo>>>,
 }
@@ -358,7 +201,6 @@ impl <RInfo> Clone for Node<RInfo> {
 }
 
 impl <RInfo> Node<RInfo> {
-
     fn render<V, L>(&self, styles: &Styles<RInfo>, layout: &mut L, visitor: &mut V, area: Rect, force_dirty: bool)
         where V: RenderVisitor<RInfo>,
               L: LayoutEngine<RInfo>,
@@ -384,7 +226,7 @@ impl <RInfo> Node<RInfo> {
                         }
                     }
                 }
-                obj.draw_rect = layout.position_element(&mut obj);
+                layout.position_element(&mut obj);
                 if let Some(layout) = obj.get_value::<String>("layout") {
                     if let Some(engine) = styles.layouts.get(&layout) {
                         obj.layout_engine = RefCell::new(engine(&obj));
@@ -419,6 +261,10 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Adds the passed node as a child to this node.
+    ///
+    /// This panics if the passed node already has a parent
+    /// or if the node is a text node.
     pub fn add_child(&self, node: Node<RInfo>) {
         assert!(node.inner.borrow().parent.is_none(), "Node already has a parent");
         if let NodeValue::Element(ref mut e) = self.inner.borrow_mut().value {
@@ -429,6 +275,7 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Returns the name of the node if it has one
     pub fn name(&self) -> Option<String> {
         let inner = self.inner.borrow();
         match inner.value {
@@ -437,6 +284,7 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Returns the value of the property if it has it set
     pub fn get_property<V: PropertyValue>(&self, key: &str) -> Option<V> {
         let inner = self.inner.borrow();
         match inner.value {
@@ -445,6 +293,9 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Sets the value of the property on the node.
+    ///
+    /// Only valid on non-text nodes.
     pub fn set_property<V: PropertyValue>(&self, key: &str, value: V){
         let mut inner = self.inner.borrow_mut();
         inner.render_object = None;
@@ -454,15 +305,18 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Begins a query on this node
     pub fn query(&self) -> query::Query<RInfo> {
         query::Query::new(self.clone())
     }
 
+    /// Creates a node from a string
     pub fn from_str(s: &str) -> Result<Node<RInfo>, syntax::PError> {
         syntax::desc::Document::parse(s)
             .map(|v| Node::from_document(v))
     }
 
+    /// Creates a node from a parsed document.
     pub fn from_document(desc: syntax::desc::Document) -> Node<RInfo> {
         Node::from_doc_element(desc.root)
     }
@@ -478,7 +332,6 @@ impl <RInfo> Node<RInfo> {
     }
 
     fn from_doc_element(desc: syntax::desc::Element) -> Node<RInfo> {
-
         let node = Node {
             inner: Rc::new(RefCell::new(NodeInner {
                 parent: None,
@@ -537,6 +390,7 @@ struct Element<RInfo> {
     children: Vec<Node<RInfo>>,
 }
 
+/// A value that can be used as a style attribute
 #[derive(Debug)]
 pub enum Value {
     Integer(i32),
@@ -546,10 +400,12 @@ pub enum Value {
 }
 
 impl Value {
+    /// Tries to convert this value into the type.
     pub fn get_value<V: PropertyValue>(&self) -> Option<V> {
          V::convert_from(self)
     }
 
+    /// Tries to convert this value into the custom type.
     pub fn get_custom_value<V: CustomValue + 'static>(&self) -> Option<&V> {
         if let Value::Any(ref v) = *self {
             (**v).as_any().downcast_ref::<V>()
@@ -592,20 +448,30 @@ impl From<syntax::desc::ValueType> for Value {
     }
 }
 
+/// The value passed to layout engines and render visitors
+/// in order to render the nodes.
+///
+/// `render_info` is used by the renderer and not stylish.
 pub struct RenderObject<RInfo> {
+    /// The position and size of the element
+    /// as decided by the layout engine.
     pub draw_rect: Rect,
     layout_engine: RefCell<Box<LayoutEngine<RInfo>>>,
     vars: HashMap<String, Value>,
+    /// Renderer storage
     pub render_info: Option<RInfo>,
+    /// The text of this element if it is text.
     pub text: Option<String>,
 }
 
 impl <RInfo> RenderObject<RInfo> {
+    /// Gets the value from the style rules for this element
     pub fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
         self.vars.get(name)
             .and_then(|v| V::convert_from(&v))
     }
 
+    /// Gets the custom value from the style rules for this element
     pub fn get_custom_value<V: CustomValue + 'static>(&self, name: &str) -> Option<&V> {
         self.vars.get(name)
             .and_then(|v| if let Value::Any(ref v) = *v {
@@ -631,12 +497,17 @@ impl <RInfo> Default for RenderObject<RInfo> {
     }
 }
 
+/// A value that can be stored as a property
 pub trait PropertyValue: Sized {
+    /// Converts a value into this type
     fn convert_from(v: &Value) -> Option<Self>;
+    /// Converts this type into a value
     fn convert_into(self) -> Value;
 }
 
+/// A type that can be converted into `Any`
 pub trait Anyable: Any {
+    /// Converts this type to `Any`
     fn as_any(&self) -> &Any;
 }
 
@@ -646,7 +517,10 @@ impl <T: Any> Anyable for T {
     }
 }
 
+/// A non-standard type that can be used as a property
+/// value.
 pub trait CustomValue: Anyable {
+    /// Clones this type
     fn clone(&self) -> Box<CustomValue>;
 }
 
