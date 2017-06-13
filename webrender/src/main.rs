@@ -48,6 +48,16 @@ impl <T> stylish::LayoutEngine<T> for GridLayout {
 struct TestLoader;
 
 impl stylish_webrender::Assets for TestLoader {
+    fn load_font(&mut self, name: &str) -> Option<Vec<u8>> {
+        use std::fs;
+        use std::io::Read;
+        let mut file = if let Ok(f) = fs::File::open(format!("res/{}.ttf", name)) {
+            f
+        } else { return None; };
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+        Some(data)
+    }
     fn load_image(&mut self, name: &str) -> Option<stylish_webrender::Image> {
         use std::fs;
         use std::io::BufReader;
@@ -127,8 +137,10 @@ fn main() {
     manager.add_node_str(r##"
 top_bar {
     menu
+    "Inbox"
     search {
         icon
+        "Search"
     }
 }
 "##).unwrap();
@@ -150,6 +162,15 @@ top_bar > menu {
     height = 24,
     image = "menu_white",
 }
+top_bar > @text {
+    x = 67,
+    y = 35,
+    width = 60,
+    height = 24,
+    font = "arial",
+    font_size = 20,
+    font_color = rgb(255, 255, 255),
+}
 root(width=width, height=height) > top_bar > search {
     width = width - 300,
     height = 36,
@@ -163,6 +184,15 @@ search > icon {
     width = 24,
     height = 24,
     image = "search_white",
+}
+search > @text {
+    x = 67,
+    y = 24,
+    width = 60,
+    height = 24,
+    font = "arial",
+    font_size = 17,
+    font_color = rgb(255, 255, 255),
 }
 "##).unwrap();
 

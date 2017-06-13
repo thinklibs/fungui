@@ -44,6 +44,12 @@ pub struct WebRenderer<A> {
     frame_id: Epoch,
 
     images: HashMap<String, ImageKey>,
+    fonts: HashMap<String, Font>,
+}
+
+struct Font {
+    key: FontKey,
+    info: stb_truetype::FontInfo<Vec<u8>>,
 }
 
 impl <A: Assets> WebRenderer<A> {
@@ -87,6 +93,7 @@ impl <A: Assets> WebRenderer<A> {
             frame_id: Epoch(0),
 
             images: HashMap::new(),
+            fonts: HashMap::new(),
         })
     }
 
@@ -112,6 +119,7 @@ impl <A: Assets> WebRenderer<A> {
             builder: &mut builder,
             assets: &mut self.assets,
             images: &mut self.images,
+            fonts: &mut self.fonts,
             clip_rect: clip,
             offset: Vec::with_capacity(16),
         }, width as i32, height as i32);
@@ -141,6 +149,16 @@ pub struct Info {
     background_color: Option<Color>,
     image: Option<ImageKey>,
     shadows: Vec<Shadow>,
+
+    text: Option<Text>,
+}
+
+#[derive(Debug)]
+struct Text {
+    glyphs: Vec<GlyphInstance>,
+    font: FontKey,
+    size: i32,
+    color: ColorF,
 }
 
 struct WebBuilder<'a, A: 'a> {
@@ -149,6 +167,7 @@ struct WebBuilder<'a, A: 'a> {
 
     assets: &'a mut A,
     images: &'a mut HashMap<String, ImageKey>,
+    fonts: &'a mut HashMap<String, Font>,
 
     clip_rect: LayoutRect,
     offset: Vec<LayoutPoint>,
@@ -157,7 +176,78 @@ struct WebBuilder<'a, A: 'a> {
 impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
     fn visit(&mut self, obj: &mut stylish::RenderObject<Info>) {
         use std::collections::hash_map::Entry;
+
+        let width = obj.draw_rect.width as f32;
+        let height = obj.draw_rect.height as f32;
+
+        let offset = self.offset.last().cloned().unwrap_or(LayoutPoint::zero());
+
+        let rect = LayoutRect::new(
+            LayoutPoint::new(obj.draw_rect.x as f32 + offset.x, obj.draw_rect.y as f32 + offset.y),
+            LayoutSize::new(width, height),
+        );
+
         if obj.render_info.is_none() {
+            let text = if let (Some(txt), Some(font)) = (obj.text.as_ref(), obj.get_value::<String>("font")) {
+                let finfo = match self.fonts.entry(font) {
+                    Entry::Occupied(v) => Some(v.into_mut()),
+                    Entry::Vacant(v) => {
+                        if let Some(data) = self.assets.load_font(v.key()) {
+                            let info = stb_truetype::FontInfo::new(data.clone(), 0).unwrap();
+                            let key = self.api.generate_font_key();
+                            self.api.add_raw_font(key, data, 0);
+                            Some(v.insert(Font {
+                                key: key,
+                                info: info,
+                            }))
+                        } else { None }
+                    },
+                };
+                if let Some(finfo) = finfo {
+                    let size = obj.get_value::<i32>("font_size").unwrap_or(16);
+                    let color = if let Some(Color::Solid(col)) = Color::get(obj, "font_color") {
+                        col
+                    } else {
+                        ColorF::new(0.0, 0.0, 0.0, 1.0)
+                    };
+
+                    let glyphs = txt.chars()
+                        .scan((0.0, None), |state, v| {
+                            let index = finfo.info.find_glyph_index(v as u32);
+                            let scale = finfo.info.scale_for_pixel_height(size as f32);
+                            state.0 = if let Some(last) = state.1 {
+                                let kern = finfo.info.get_glyph_kern_advance(last, index);
+                                state.0 + kern as f32 * scale
+                            } else {
+                                state.0
+                            };
+                            state.1 = Some(index);
+
+                            let pos = state.0;
+                            state.0 += (finfo.info.get_glyph_h_metrics(index).advance_width as f32 * scale).ceil();
+
+                            Some(GlyphInstance {
+                                index: index,
+                                point: LayoutPoint::new(
+                                    rect.origin.x + pos,
+                                    rect.origin.y,
+                                ),
+                            })
+                        })
+                        .collect();
+                    Some(Text {
+                        glyphs: glyphs,
+                        font: finfo.key,
+                        size: size,
+                        color: color,
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             obj.render_info = Some(Info {
                 background_color: Color::get(obj, "background_color"),
                 image: obj.get_value::<String>("image")
@@ -197,20 +287,11 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                     .or_else(|| obj.get_custom_value::<Vec<Shadow>>("shadow")
                         .cloned())
                     .unwrap_or_else(Vec::new),
+                text: text,
             });
         }
 
         let info = obj.render_info.as_ref().unwrap();
-
-        let width = obj.draw_rect.width as f32;
-        let height = obj.draw_rect.height as f32;
-
-        let offset = self.offset.last().cloned().unwrap_or(LayoutPoint::zero());
-
-        let rect = LayoutRect::new(
-            LayoutPoint::new(obj.draw_rect.x as f32 + offset.x, obj.draw_rect.y as f32 + offset.y),
-            LayoutSize::new(width, height),
-        );
 
         if let Some(key) = info.image {
             let clip = self.builder.push_clip_region(&self.clip_rect, None, None);
@@ -267,6 +348,20 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 shadow.spread_radius,
                 0.0,
                 shadow.clip_mode,
+            );
+        }
+
+        if let Some(txt) = info.text.as_ref() {
+            let clip = self.builder.push_clip_region(&self.clip_rect, None, None);
+            self.builder.push_text(
+                rect,
+                clip,
+                &txt.glyphs,
+                txt.font,
+                txt.color,
+                app_units::Au::from_px(txt.size),
+                0.0,
+                None
             );
         }
 
