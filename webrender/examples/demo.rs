@@ -116,7 +116,7 @@ text_box {
     " and have a mix of text, elements and "
     rust_logo
     " images. Formatting like "
-    " bold"(bold=true)
+    "bold"(bold=true)
     " and colors: "
     "A"(color="#ff0000")
     "l"(color="#ff3500")
