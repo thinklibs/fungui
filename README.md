@@ -2,12 +2,12 @@
 
 A webrender based UI system that can (hopefully) be used in games.
 
-# Demo
+## Demo
 
-```
+```bash
 cargo run -p stylish_webrender --example demo --release
 ```
 
-# Screenshots
+## Screenshots
 
-![Demo](http://i.imgur.com/L8mkOxn.png)
+![demo](demo.png)
