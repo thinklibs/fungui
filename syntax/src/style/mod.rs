@@ -119,6 +119,8 @@ pub struct ValueType {
 /// A parsed value for a property
 #[derive(Debug)]
 pub enum Value {
+    /// A boolean value
+    Boolean(bool),
     /// A 32 bit integer
     Integer(i32),
     /// A 64 bit float (of the form `0.0`)
@@ -446,6 +448,8 @@ fn property<I>(input: I) -> ParseResult<(Ident, ValueType), I>
 fn value<I>(input: I) -> ParseResult<ValueType, I>
     where I: Stream<Item=char, Position=SourcePosition>
 {
+    let boolean = parser(parse_bool)
+        .map(|v| Value::Boolean(v));
     let float = parser(parse_float)
         .map(|v| Value::Float(v));
     let integer = parser(parse_integer)
@@ -459,7 +463,8 @@ fn value<I>(input: I) -> ParseResult<ValueType, I>
 
     (
         position(),
-        try(float)
+        try(boolean)
+            .or(try(float))
             .or(try(integer))
             .or(try(string))
             .or(variable)
@@ -469,6 +474,17 @@ fn value<I>(input: I) -> ParseResult<ValueType, I>
             position: SourcePosition::into(v.0),
         })
         .parse_stream(input)
+}
+
+fn parse_bool<I>(input: I) -> ParseResult<bool, I>
+    where I: Stream<Item=char, Position=SourcePosition>
+{
+    let (t, input) = try!(optional(string("true")).parse_lazy(input).into());
+    if t.is_some() {
+        return Ok((true, input));
+    }
+    let (_, input) = try!(input.combine(|input| string("false").parse_lazy(input).into()));
+    Ok((false, input))
 }
 
 fn parse_float<I>(input: I) -> ParseResult<f64, I>

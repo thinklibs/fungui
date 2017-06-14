@@ -13,11 +13,14 @@ mod color;
 use color::*;
 mod shadow;
 use shadow::*;
+mod layout;
 
 use webrender::*;
 use webrender_traits::*;
 use std::error::Error;
 use std::collections::HashMap;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 // TODO: Don't box errors, error chain would be better
 type WResult<T> = Result<T, Box<Error>>;
@@ -38,21 +41,23 @@ type WResult<T> = Result<T, Box<Error>>;
 ///    * `rgba(R, G, B, A)` - **R**ed, **G**reen, **B**lue, **A**lpha
 ///                        in decimal 0-255.
 pub struct WebRenderer<A> {
-    assets: A,
+    assets: Rc<A>,
     renderer: Renderer,
     api: RenderApi,
     frame_id: Epoch,
 
     images: HashMap<String, ImageKey>,
-    fonts: HashMap<String, Font>,
+    fonts: FontMap,
 }
+
+type FontMap = Rc<RefCell<HashMap<String, Font>>>;
 
 struct Font {
     key: FontKey,
     info: stb_truetype::FontInfo<Vec<u8>>,
 }
 
-impl <A: Assets> WebRenderer<A> {
+impl <A: Assets + 'static> WebRenderer<A> {
     pub fn new<F>(
         load_fn: F,
         assets: A,
@@ -72,6 +77,9 @@ impl <A: Assets> WebRenderer<A> {
         manager.add_func_raw("shadow", shadow);
         manager.add_func_raw("shadows", shadows);
 
+        let fonts = Rc::new(RefCell::new(HashMap::new()));
+        let assets = Rc::new(assets);
+
         let options = webrender::RendererOptions {
             device_pixel_ratio: 1.0,
             resource_override_path: None,
@@ -86,6 +94,20 @@ impl <A: Assets> WebRenderer<A> {
         let pipeline = PipelineId(0, 0);
         api.set_root_pipeline(pipeline);
 
+        {
+            let fonts = fonts.clone();
+            let sender = sender.clone();
+            let assets = assets.clone();
+            manager.add_layout_engine("lined", move |obj| {
+                Box::new(layout::Lined::new(
+                    obj,
+                    sender.create_api(),
+                    fonts.clone(),
+                    assets.clone(),
+                ))
+            })
+        }
+
         Ok(WebRenderer {
             assets: assets,
             renderer: renderer,
@@ -93,7 +115,7 @@ impl <A: Assets> WebRenderer<A> {
             frame_id: Epoch(0),
 
             images: HashMap::new(),
-            fonts: HashMap::new(),
+            fonts: fonts,
         })
     }
 
@@ -117,9 +139,9 @@ impl <A: Assets> WebRenderer<A> {
         manager.render(&mut WebBuilder {
             api: &self.api,
             builder: &mut builder,
-            assets: &mut self.assets,
+            assets: self.assets.clone(),
             images: &mut self.images,
-            fonts: &mut self.fonts,
+            fonts: self.fonts.clone(),
             clip_rect: clip,
             offset: Vec::with_capacity(16),
         }, width as i32, height as i32);
@@ -165,9 +187,9 @@ struct WebBuilder<'a, A: 'a> {
     api: &'a RenderApi,
     builder: &'a mut DisplayListBuilder,
 
-    assets: &'a mut A,
+    assets: Rc<A>,
     images: &'a mut HashMap<String, ImageKey>,
-    fonts: &'a mut HashMap<String, Font>,
+    fonts: FontMap,
 
     clip_rect: LayoutRect,
     offset: Vec<LayoutPoint>,
@@ -189,7 +211,8 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
         if obj.render_info.is_none() {
             let text = if let (Some(txt), Some(font)) = (obj.text.as_ref(), obj.get_value::<String>("font")) {
-                let finfo = match self.fonts.entry(font) {
+                let mut fonts = self.fonts.borrow_mut();
+                let finfo = match fonts.entry(font) {
                     Entry::Occupied(v) => Some(v.into_mut()),
                     Entry::Vacant(v) => {
                         if let Some(data) = self.assets.load_font(v.key()) {
@@ -211,28 +234,37 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         ColorF::new(0.0, 0.0, 0.0, 1.0)
                     };
 
-                    let glyphs = txt.chars()
-                        .scan((0.0, None), |state, v| {
-                            let index = finfo.info.find_glyph_index(v as u32);
-                            let scale = finfo.info.scale_for_pixel_height(size as f32);
-                            state.0 = if let Some(last) = state.1 {
-                                let kern = finfo.info.get_glyph_kern_advance(last, index);
-                                state.0 + kern as f32 * scale
-                            } else {
-                                state.0
-                            };
-                            state.1 = Some(index);
+                    if obj.text_splits.is_empty() {
+                        obj.text_splits.push((0, txt.len(), obj.draw_rect));
+                    }
 
-                            let pos = state.0;
-                            state.0 += (finfo.info.get_glyph_h_metrics(index).advance_width as f32 * scale).ceil();
+                    let scale = finfo.info.scale_for_pixel_height(size as f32);
+                    let glyphs = obj.text_splits.iter()
+                        .flat_map(|&(s, e, rect)| {
+                            let rect = rect;
+                            let finfo = &finfo;
+                            txt[s..e].chars()
+                                .scan((0.0, None), move |state, v| {
+                                    let index = finfo.info.find_glyph_index(v as u32);
+                                    state.0 = if let Some(last) = state.1 {
+                                        let kern = finfo.info.get_glyph_kern_advance(last, index);
+                                        state.0 + kern as f32 * scale
+                                    } else {
+                                        state.0
+                                    };
+                                    state.1 = Some(index);
 
-                            Some(GlyphInstance {
-                                index: index,
-                                point: LayoutPoint::new(
-                                    rect.origin.x + pos,
-                                    rect.origin.y,
-                                ),
-                            })
+                                    let pos = state.0;
+                                    state.0 += (finfo.info.get_glyph_h_metrics(index).advance_width as f32 * scale).ceil();
+
+                                    Some(GlyphInstance {
+                                        index: index,
+                                        point: LayoutPoint::new(
+                                            rect.x as f32 + offset.x + pos,
+                                            rect.y as f32 + offset.y + size as f32,
+                                        ),
+                                    })
+                                })
                         })
                         .collect();
                     Some(Text {

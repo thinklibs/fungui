@@ -14,41 +14,10 @@ use std::time::Duration;
 
 const TARGET_FPS: u32 = 60;
 
-struct GridLayout {
-    count: usize,
-    grid_size: i32,
-    width: i32,
-}
-
-impl GridLayout {
-    fn new<T>(obj: &stylish::RenderObject<T>) -> Box<stylish::LayoutEngine<T>> {
-        let size = obj.get_value::<i32>("grid_size").unwrap_or(1);
-        Box::new(GridLayout {
-            count: 0,
-            grid_size: size,
-            width: obj.draw_rect.width,
-        })
-    }
-}
-
-impl <T> stylish::LayoutEngine<T> for GridLayout {
-    fn position_element(&mut self, obj: &mut stylish::RenderObject<T>) {
-        let pos = self.count as i32;
-        self.count += 1;
-        let w = self.width / self.grid_size;
-        obj.draw_rect = stylish::Rect {
-            x: (pos % w) * self.grid_size,
-            y: (pos / w) * self.grid_size,
-            width: self.grid_size,
-            height: self.grid_size,
-        }
-    }
-}
-
 struct TestLoader;
 
 impl stylish_webrender::Assets for TestLoader {
-    fn load_font(&mut self, name: &str) -> Option<Vec<u8>> {
+    fn load_font(&self, name: &str) -> Option<Vec<u8>> {
         use std::fs;
         use std::io::Read;
         let mut file = if let Ok(f) = fs::File::open(format!("res/{}.ttf", name)) {
@@ -58,7 +27,7 @@ impl stylish_webrender::Assets for TestLoader {
         file.read_to_end(&mut data).unwrap();
         Some(data)
     }
-    fn load_image(&mut self, name: &str) -> Option<stylish_webrender::Image> {
+    fn load_image(&self, name: &str) -> Option<stylish_webrender::Image> {
         use std::fs;
         use std::io::BufReader;
         let file = BufReader::new(if let Ok(f) = fs::File::open(format!("res/{}.png", name)) {
@@ -122,7 +91,6 @@ fn main() {
     window.gl_make_current(&context).unwrap();
 
     let mut manager = stylish::Manager::new();
-    manager.add_layout_engine("grid", GridLayout::new);
 
     let mut renderer = stylish_webrender::WebRenderer::new(
         |n| video_subsystem.gl_get_proc_address(n),
@@ -142,6 +110,21 @@ top_bar {
         icon
         "Search"
     }
+}
+"##).unwrap();
+    manager.add_node_str(r##"
+text_box {
+    cbox(w=20,h=16,col="#FF0000")
+    "Hello world this needs to be long enough to overflow"
+    cbox(w=10,h=24,col="#00FF00")
+    cbox(w=200,h=20,col="#0000FF")
+    "and have a mix of text and elements"
+    bold {
+        " bold "
+    }
+    "woo"
+    cbox(w=70,h=20,col="#00FFFF")
+    cbox(w=70,h=24,col="#FF00FF")
 }
 "##).unwrap();
     manager.load_styles("base", r##"
@@ -164,10 +147,10 @@ top_bar > menu {
 }
 top_bar > @text {
     x = 67,
-    y = 35,
+    y = 16,
     width = 60,
     height = 24,
-    font = "arial",
+    font = "font/FiraSans-Regular",
     font_size = 20,
     font_color = rgb(255, 255, 255),
 }
@@ -187,12 +170,44 @@ search > icon {
 }
 search > @text {
     x = 67,
-    y = 24,
+    y = 8,
     width = 60,
     height = 24,
-    font = "arial",
+    font = "font/FiraSans-Regular",
     font_size = 17,
     font_color = rgb(255, 255, 255),
+}
+
+root(width=width, height=height) > text_box {
+    x = 16,
+    y = 100,
+    max_width = width - 32,
+    background_color = rgba(0, 0, 0, 0.3),
+    layout = "lined",
+    line_height = 24,
+    auto_size = true,
+}
+text_box > @text {
+    font = "font/FiraSans-Regular",
+    font_size = 17,
+    font_color = rgb(255, 0, 0),
+}
+cbox(w=width, h=height, col=color) {
+    width = width,
+    height= height,
+    background_color = color,
+}
+
+bold {
+    layout = "lined",
+    line_height = 24,
+    auto_size = true,
+}
+
+bold > @text {
+    font = "font/FiraSans-Bold",
+    font_size = 17,
+    font_color = rgb(255, 0, 0),
 }
 "##).unwrap();
 
@@ -207,8 +222,6 @@ search > @text {
                 Event::Quit {..} | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => {
                     break 'main_loop;
                 },
-                Event::MouseMotion{x, y, ..} => {
-                }
                 _ => {}
             }
         }

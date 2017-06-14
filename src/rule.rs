@@ -1,4 +1,5 @@
 use super::*;
+use error::ResultExt;
 
 pub struct RuleIter<'a, I, RInfo: 'a> {
     pub(crate) node: &'a Node<RInfo>,
@@ -15,6 +16,7 @@ impl <'a> Rule<'a> {
     pub(crate) fn eval_value(&self, val: &syntax::style::Value) -> SResult<Value> {
         use syntax::style;
         Ok(match *val {
+            style::Value::Boolean(b) => Value::Boolean(b),
             style::Value::Float(f) => Value::Float(f),
             style::Value::Integer(i) => Value::Integer(i),
             style::Value::String(ref s) => Value::String(s.clone()),
@@ -80,6 +82,7 @@ impl <'a> Rule<'a> {
             style::Expr::Neg(ref l) => {
                 let l = self.eval(styles, l)?;
                 match l {
+                    Value::Boolean(b) => Ok(Value::Boolean(!b)),
                     Value::Float(l) => Ok(Value::Float(-l)),
                     Value::Integer(l) => Ok(Value::Integer(-l)),
                     _ => Err(ErrorKind::CantOp(
@@ -151,6 +154,10 @@ impl <'a, 'b, I, RInfo> Iterator for RuleIter<'b, I, RInfo>
                                         ) => {
                                             vars.insert(name.name.clone(), val.clone());
                                         },
+                                        (
+                                            &style::Value::Boolean(b),
+                                            &Value::Boolean(nb),
+                                        ) if nb == b => {},
                                         (
                                             &style::Value::Integer(i),
                                             &Value::Integer(ni),

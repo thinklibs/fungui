@@ -9,7 +9,7 @@ use rule::*;
 
 /// The error type used by stylish
 pub type SResult<T> = error::Result<T>;
-use error::{ErrorKind, ResultExt};
+use error::ErrorKind;
 
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
@@ -100,17 +100,20 @@ impl <RInfo> Manager<RInfo> {
     {
         let dirty = self.last_size != (width, height);
         self.last_size = (width, height);
-        let screen = Rect {
-            x: 0, y: 0,
-            width: width,
-            height: height
-        };
         self.root.set_property("width", width);
         self.root.set_property("height", height);
+        {
+            // TODO: Hack
+            let mut inner = self.root.inner.borrow_mut();
+            inner.render_object = Some(RenderObject::default());
+        }
         let inner = self.root.inner.borrow();
         if let NodeValue::Element(ref e) = inner.value {
             for c in &e.children {
-                c.render(&self.styles, &mut AbsoluteLayout, visitor, screen, dirty);
+                c.layout(&self.styles, &mut AbsoluteLayout,  dirty);
+            }
+            for c in &e.children {
+                c.render(&self.styles, visitor);
             }
         }
     }
@@ -118,14 +121,22 @@ impl <RInfo> Manager<RInfo> {
 
 /// Used to position an element within another element.
 pub trait LayoutEngine<RInfo> {
-    /// Called when the element needs to be positioned. Should
-    /// set the value of `draw_rect` on the passed object.
-    fn position_element(&mut self, obj: &mut RenderObject<RInfo>);
+    fn pre_position_child(&mut self, obj: &mut RenderObject<RInfo>, parent: &RenderObject<RInfo>);
+    fn post_position_child(&mut self, obj: &mut RenderObject<RInfo>, parent: &RenderObject<RInfo>);
+
+    /// Runs on the element not the children
+    fn finalize_layout(&mut self, obj: &mut RenderObject<RInfo>, children: Vec<&mut RenderObject<RInfo>>);
 }
 
 impl <RInfo> LayoutEngine<RInfo> for Box<LayoutEngine<RInfo>> {
-    fn position_element(&mut self, obj: &mut RenderObject<RInfo>) {
-        (**self).position_element(obj)
+    fn pre_position_child(&mut self, obj: &mut RenderObject<RInfo>, parent: &RenderObject<RInfo>) {
+        (**self).pre_position_child(obj, parent)
+    }
+    fn post_position_child(&mut self, obj: &mut RenderObject<RInfo>, parent: &RenderObject<RInfo>) {
+        (**self).post_position_child(obj, parent)
+    }
+    fn finalize_layout(&mut self, obj: &mut RenderObject<RInfo>, children: Vec<&mut RenderObject<RInfo>>) {
+        (**self).finalize_layout(obj, children)
     }
 }
 
@@ -136,13 +147,48 @@ impl <RInfo> LayoutEngine<RInfo> for Box<LayoutEngine<RInfo>> {
 struct AbsoluteLayout;
 
 impl <RInfo> LayoutEngine<RInfo> for AbsoluteLayout {
-    fn position_element(&mut self, obj: &mut RenderObject<RInfo>) {
+    fn pre_position_child(&mut self, obj: &mut RenderObject<RInfo>, _parent: &RenderObject<RInfo>) {
+        let width = obj.get_value::<i32>("width");
+        let height = obj.get_value::<i32>("height");
         obj.draw_rect = Rect {
             x: obj.get_value::<i32>("x").unwrap_or(0),
             y: obj.get_value::<i32>("y").unwrap_or(0),
-            width: obj.get_value::<i32>("width").unwrap_or(0),
-            height: obj.get_value::<i32>("height").unwrap_or(0),
+            width: width.or_else(|| obj.get_value::<i32>("min_width"))
+                .unwrap_or(0),
+            height: height.or_else(|| obj.get_value::<i32>("min_height"))
+                .unwrap_or(0),
+        };
+        obj.min_size = (
+            obj.draw_rect.width,
+            obj.draw_rect.height,
+        );
+        obj.max_size = (
+            width.or_else(|| obj.get_value::<i32>("max_width")),
+            height.or_else(|| obj.get_value::<i32>("max_height")),
+        );
+    }
+
+    fn post_position_child(&mut self, _obj: &mut RenderObject<RInfo>, _parent: &RenderObject<RInfo>) {
+    }
+
+    fn finalize_layout(&mut self, obj: &mut RenderObject<RInfo>, children: Vec<&mut RenderObject<RInfo>>) {
+        use std::cmp;
+        if !obj.get_value::<bool>("auto_size").unwrap_or(false) {
+            return
         }
+        let mut max = obj.min_size;
+        for c in children {
+            max.0 = cmp::max(max.0, c.draw_rect.x + c.draw_rect.width);
+            max.1 = cmp::max(max.1, c.draw_rect.y + c.draw_rect.height);
+        }
+        if let Some(v) = obj.max_size.0 {
+            max.0 = cmp::min(v, max.0);
+        }
+        if let Some(v) = obj.max_size.1 {
+            max.1 = cmp::min(v, max.1);
+        }
+        obj.draw_rect.width = max.0;
+        obj.draw_rect.height = max.1;
     }
 }
 
@@ -201,11 +247,11 @@ impl <RInfo> Clone for Node<RInfo> {
 }
 
 impl <RInfo> Node<RInfo> {
-    fn render<V, L>(&self, styles: &Styles<RInfo>, layout: &mut L, visitor: &mut V, area: Rect, force_dirty: bool)
-        where V: RenderVisitor<RInfo>,
-              L: LayoutEngine<RInfo>,
+    fn layout<L>(&self, styles: &Styles<RInfo>, layout: &mut L, force_dirty: bool)
+        where L: LayoutEngine<RInfo>,
     {
         use std::collections::hash_map::Entry;
+        use std::mem;
         let mut dirty = force_dirty;
         {
             let missing_obj = {
@@ -226,21 +272,20 @@ impl <RInfo> Node<RInfo> {
                         }
                     }
                 }
-                layout.position_element(&mut obj);
+                let mut inner = self.inner.borrow_mut();
+                if let Some(parent) = inner.parent.as_ref().and_then(|v| v.upgrade()) {
+                    let parent = parent.borrow();
+                    layout.pre_position_child(&mut obj, parent.render_object.as_ref().unwrap());
+                }
                 if let Some(layout) = obj.get_value::<String>("layout") {
                     if let Some(engine) = styles.layouts.get(&layout) {
                         obj.layout_engine = RefCell::new(engine(&obj));
                     }
                 }
-                let mut inner = self.inner.borrow_mut();
                 if let NodeValue::Text(ref txt) = inner.value {
                     obj.text = Some(txt.clone());
                 }
                 inner.render_object = Some(obj);
-            }
-            let mut inner = self.inner.borrow_mut();
-            if let Some(render) = inner.render_object.as_mut() {
-                visitor.visit(render);
             }
         }
         {
@@ -249,8 +294,47 @@ impl <RInfo> Node<RInfo> {
                 let mut layout_engine = render.layout_engine.borrow_mut();
                 if let NodeValue::Element(ref e) = inner.value {
                     for c in &e.children {
-                        c.render(styles, &mut *layout_engine, visitor, render.draw_rect, dirty);
+                        c.layout(styles, &mut *layout_engine,  dirty);
                     }
+                }
+            }
+        }
+        if dirty {
+            let mut inner: &mut NodeInner<RInfo> = &mut *self.inner.borrow_mut();
+            if let Some(render) = inner.render_object.as_mut() {
+                let layout_engine = mem::replace(&mut render.layout_engine, RefCell::new(Box::new(AbsoluteLayout)));
+                if let NodeValue::Element(ref e) = inner.value {
+                    let mut children_ref = e.children.iter()
+                        .map(|v| v.inner.borrow_mut())
+                        .collect::<Vec<_>>();
+                    let children = children_ref.iter_mut()
+                        .filter_map(|v| v.render_object.as_mut())
+                        .collect();
+                    layout_engine.borrow_mut().finalize_layout(render, children);
+                }
+                render.layout_engine = layout_engine;
+            }
+            if let Some(parent) = inner.parent.as_ref().and_then(|v| v.upgrade()) {
+                let parent = parent.borrow();
+                layout.post_position_child(inner.render_object.as_mut().unwrap(), parent.render_object.as_ref().unwrap());
+            }
+        }
+    }
+
+    fn render<V>(&self, styles: &Styles<RInfo>, visitor: &mut V)
+        where V: RenderVisitor<RInfo>,
+    {
+        {
+            let mut inner = self.inner.borrow_mut();
+            if let Some(render) = inner.render_object.as_mut() {
+                visitor.visit(render);
+            }
+        }
+        {
+            let inner = self.inner.borrow();
+            if let NodeValue::Element(ref e) = inner.value {
+                for c in &e.children {
+                    c.render(styles, visitor);
                 }
             }
         }
@@ -367,7 +451,7 @@ impl <RInfo> Node<RInfo> {
                     properties: HashMap::default(),
                     children: Vec::new(),
                 }),
-                render_object: None,
+                render_object: Some(RenderObject::default()),
             })),
         }
     }
@@ -393,6 +477,7 @@ struct Element<RInfo> {
 /// A value that can be used as a style attribute
 #[derive(Debug)]
 pub enum Value {
+    Boolean(bool),
     Integer(i32),
     Float(f64),
     String(String),
@@ -418,6 +503,7 @@ impl Value {
 impl Clone for Value {
     fn clone(&self) -> Value {
         match *self {
+            Value::Boolean(v) => Value::Boolean(v),
             Value::Integer(v) => Value::Integer(v),
             Value::Float(v) => Value::Float(v),
             Value::String(ref v) => Value::String(v.clone()),
@@ -430,6 +516,7 @@ impl PartialEq for Value {
     fn eq(&self, rhs: &Value) -> bool {
         use Value::*;
         match (self, rhs) {
+            (&Boolean(a), &Boolean(b)) => a == b,
             (&Integer(a), &Integer(b)) => a == b,
             (&Float(a), &Float(b)) => a == b,
             (&String(ref a), &String(ref b)) => a == b,
@@ -441,6 +528,7 @@ impl PartialEq for Value {
 impl From<syntax::desc::ValueType> for Value {
     fn from(v: syntax::desc::ValueType) -> Value {
         match v.value {
+            syntax::desc::Value::Boolean(val) => Value::Boolean(val),
             syntax::desc::Value::Integer(val) => Value::Integer(val),
             syntax::desc::Value::Float(val) => Value::Float(val),
             syntax::desc::Value::String(val) => Value::String(val),
@@ -456,12 +544,19 @@ pub struct RenderObject<RInfo> {
     /// The position and size of the element
     /// as decided by the layout engine.
     pub draw_rect: Rect,
+    /// The smallest this object can be
+    pub min_size: (i32, i32),
+    /// The largest this object can be.
+    ///
+    /// None for no limit
+    pub max_size: (Option<i32>, Option<i32>),
     layout_engine: RefCell<Box<LayoutEngine<RInfo>>>,
     vars: HashMap<String, Value>,
     /// Renderer storage
     pub render_info: Option<RInfo>,
     /// The text of this element if it is text.
     pub text: Option<String>,
+    pub text_splits: Vec<(usize, usize, Rect)>,
 }
 
 impl <RInfo> RenderObject<RInfo> {
@@ -489,10 +584,13 @@ impl <RInfo> Default for RenderObject<RInfo> {
                 width: 0,
                 height: 0,
             },
+            min_size: (0, 0),
+            max_size: (None, None),
             layout_engine: RefCell::new(Box::new(AbsoluteLayout)),
             vars: HashMap::new(),
             render_info: Default::default(),
             text: None,
+            text_splits: Vec::new(),
         }
     }
 }
@@ -548,6 +646,19 @@ impl <T: CustomValue + 'static> PropertyValue for T {
 impl PropertyValue for Value {
     fn convert_from(v: &Value) -> Option<Self> { Some(v.clone()) }
     fn convert_into(self) -> Value { self }
+}
+
+impl PropertyValue for bool {
+    fn convert_from(v: &Value) -> Option<Self> {
+        match *v {
+            Value::Boolean(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    fn convert_into(self) -> Value {
+        Value::Boolean(self)
+    }
 }
 
 impl PropertyValue for i32 {
