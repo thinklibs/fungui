@@ -187,6 +187,7 @@ root(width=width, height=height) > text_box {
     layout = "lined",
     line_height = 24,
     auto_size = true,
+    shadow = shadow(4.0, 4.0, rgba(0, 0, 0, 0.5), 8.0, 0.0, "outset"),
 }
 text_box > @text {
     font = "font/FiraSans-Regular",
