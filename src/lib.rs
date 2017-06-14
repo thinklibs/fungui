@@ -371,22 +371,14 @@ impl <RInfo> Node<RInfo> {
     /// Returns the value of the property if it has it set
     pub fn get_property<V: PropertyValue>(&self, key: &str) -> Option<V> {
         let inner = self.inner.borrow();
-        match inner.value {
-            NodeValue::Element(ref e) => e.properties.get(key).and_then(|v| V::convert_from(&v)),
-            NodeValue::Text(_) => None,
-        }
+        inner.properties.get(key).and_then(|v| V::convert_from(&v))
     }
 
     /// Sets the value of the property on the node.
-    ///
-    /// Only valid on non-text nodes.
-    pub fn set_property<V: PropertyValue>(&self, key: &str, value: V){
+    pub fn set_property<V: PropertyValue>(&self, key: &str, value: V) {
         let mut inner = self.inner.borrow_mut();
         inner.render_object = None;
-        match inner.value {
-            NodeValue::Element(ref mut e) => {e.properties.insert(key.into(), value.convert_into());},
-            NodeValue::Text(_) => {},
-        }
+        inner.properties.insert(key.into(), value.convert_into());
     }
 
     /// Begins a query on this node
@@ -405,11 +397,14 @@ impl <RInfo> Node<RInfo> {
         Node::from_doc_element(desc.root)
     }
 
-    fn from_doc_text(desc: String) -> Node<RInfo> {
+    fn from_doc_text(desc: String, properties: HashMap<syntax::Ident, syntax::desc::ValueType>) -> Node<RInfo> {
         Node {
             inner: Rc::new(RefCell::new(NodeInner {
                 parent: None,
                 value: NodeValue::Text(desc),
+                properties: properties.into_iter()
+                        .map(|(n, v)| (n.name, v.into()))
+                        .collect(),
                 render_object: None,
             }))
         }
@@ -422,10 +417,10 @@ impl <RInfo> Node<RInfo> {
                 value: NodeValue::Element(Element {
                     name: desc.name.name,
                     children: Vec::with_capacity(desc.nodes.len()),
-                    properties: desc.properties.into_iter()
-                        .map(|(n, v)| (n.name, v.into()))
-                        .collect()
                 }),
+                properties: desc.properties.into_iter()
+                    .map(|(n, v)| (n.name, v.into()))
+                    .collect(),
                 render_object: None,
             }))
         };
@@ -433,7 +428,7 @@ impl <RInfo> Node<RInfo> {
         for c in desc.nodes.into_iter()
             .map(|n| match n {
                 syntax::desc::Node::Element(e) => Node::from_doc_element(e),
-                syntax::desc::Node::Text(t, _) => Node::from_doc_text(t),
+                syntax::desc::Node::Text(t, _, props) => Node::from_doc_text(t, props),
             })
         {
             node.add_child(c);
@@ -448,9 +443,9 @@ impl <RInfo> Node<RInfo> {
                 parent: None,
                 value: NodeValue::Element(Element {
                     name: "root".into(),
-                    properties: HashMap::default(),
                     children: Vec::new(),
                 }),
+                properties: HashMap::default(),
                 render_object: Some(RenderObject::default()),
             })),
         }
@@ -459,6 +454,7 @@ impl <RInfo> Node<RInfo> {
 
 struct NodeInner<RInfo> {
     parent: Option<Weak<RefCell<NodeInner<RInfo>>>>,
+    properties: HashMap<String, Value>,
     value: NodeValue<RInfo>,
     render_object: Option<RenderObject<RInfo>>,
 }
@@ -470,7 +466,6 @@ enum NodeValue<RInfo> {
 
 struct Element<RInfo> {
     name: String,
-    properties: HashMap<String, Value>,
     children: Vec<Node<RInfo>>,
 }
 

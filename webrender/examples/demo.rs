@@ -104,26 +104,49 @@ fn main() {
 
     manager.add_node_str(r##"
 top_bar {
-    menu
-    "Inbox"
-    search {
-        icon
-        "Search"
-    }
+    rust_logo
+    "Stylish Demo"
 }
 "##).unwrap();
     manager.add_node_str(r##"
 text_box {
     cbox(w=20,h=16,col="#FF0000")
-    "Hello world this needs to be long enough to overflow"
+    " Hello world this needs to be long enough to overflow "
     cbox(w=10,h=24,col="#00FF00")
-    cbox(w=200,h=20,col="#0000FF")
-    "and have a mix of text and elements"
-    bold {
-        " bold "
-    }
-    "woo"
-    cbox(w=70,h=20,col="#00FFFF")
+    " and have a mix of text, elements and "
+    rust_logo
+    " images. Formatting like "
+    " bold"(bold=true)
+    " and colors: "
+    "A"(color="#ff0000")
+    "l"(color="#ff3500")
+    "s"(color="#ff6a00")
+    "o"(color="#ff9e00")
+    " "(color="#ffd300")
+    "s"(color="#f6ff00")
+    "u"(color="#c1ff00")
+    "p"(color="#8dff00")
+    "p"(color="#58ff00")
+    "o"(color="#23ff00")
+    "r"(color="#00ff12")
+    "t"(color="#00ff46")
+    "s"(color="#00ff7b")
+    " "(color="#00ffb0")
+    "l"(color="#00ffe5")
+    "o"(color="#00e5ff")
+    "t"(color="#00b0ff")
+    "s"(color="#007bff")
+    " "(color="#0046ff")
+    "o"(color="#0012ff")
+    "f"(color="#2300ff")
+    " "(color="#5800ff")
+    "c"(color="#8d00ff")
+    "o"(color="#c100ff")
+    "l"(color="#f600ff")
+    "o"(color="#ff00d3")
+    "r"(color="#ff009e")
+    "s"(color="#ff006a")
+    "! "(color="#ff0035")
     cbox(w=70,h=24,col="#FF00FF")
 }
 "##).unwrap();
@@ -133,51 +156,29 @@ root(width=width, height=height) > top_bar {
     y = 0,
     width = width,
     height = 56,
-    background_color = "#4285f4",
+    background_color = "#F49E42",
     shadow = shadows(
         shadow(0.0, 4.0, rgba(0, 0, 0, 0.28), 8.0, 0.0, "outset"),
         shadow(0.0, 0.0, rgba(0, 0, 0, 0.14), 4.0, 0.0, "outset")),
 }
-top_bar > menu {
-    x = 24,
-    y = 16,
-    width = 24,
-    height = 24,
-    image = "menu_white",
+
+top_bar > rust_logo {
+    x = 16,
+    y = 0,
+    width = 56,
+    height = 56,
+    image = "rust-logo-64",
 }
+
 top_bar > @text {
-    x = 67,
+    x = 16 + 56 + 8,
     y = 16,
     width = 60,
     height = 24,
     font = "font/FiraSans-Regular",
     font_size = 20,
-    font_color = rgb(255, 255, 255),
+    font_color = rgb(0, 0, 0),
 }
-root(width=width, height=height) > top_bar > search {
-    width = width - 300,
-    height = 36,
-    x = 150,
-    y = 10,
-    background_color = rgba(255,255,255,0.15),
-}
-search > icon {
-    x = 24,
-    y = 6,
-    width = 24,
-    height = 24,
-    image = "search_white",
-}
-search > @text {
-    x = 67,
-    y = 8,
-    width = 60,
-    height = 24,
-    font = "font/FiraSans-Regular",
-    font_size = 17,
-    font_color = rgb(255, 255, 255),
-}
-
 root(width=width, height=height) > text_box {
     x = 16,
     y = 100,
@@ -190,25 +191,27 @@ root(width=width, height=height) > text_box {
 text_box > @text {
     font = "font/FiraSans-Regular",
     font_size = 17,
-    font_color = rgb(255, 0, 0),
+    font_color = rgb(0, 0, 0),
 }
+text_box > @text(bold=true) {
+    font = "font/FiraSans-Bold",
+}
+text_box > @text(color=color) {
+    font_color = color,
+}
+
+text_box > rust_logo {
+    width = 24,
+    height = 24,
+    image = "rust-logo-32",
+}
+
 cbox(w=width, h=height, col=color) {
     width = width,
     height= height,
     background_color = color,
 }
 
-bold {
-    layout = "lined",
-    line_height = 24,
-    auto_size = true,
-}
-
-bold > @text {
-    font = "font/FiraSans-Bold",
-    font_size = 17,
-    font_color = rgb(255, 0, 0),
-}
 "##).unwrap();
 
     let target_frame_time = Duration::from_secs(1) / TARGET_FPS;

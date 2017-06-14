@@ -139,45 +139,45 @@ impl <'a, 'b, I, RInfo> Iterator for RuleIter<'b, I, RInfo>
             for m in rule.matchers.iter().rev() {
                 if let Some(cur) = current.take() {
                     let cur = cur.inner.borrow();
-                    match (m, &cur.value) {
+                    match (&m.0, &cur.value) {
                         (&style::Matcher::Text, &NodeValue::Text(..)) => {},
                         (&style::Matcher::Element(ref e), &NodeValue::Element(ref ne)) => {
                             if e.name.name != ne.name {
                                 continue 'search;
                             }
-                            for (prop, v) in &e.properties {
-                                if let Some(nprop) = ne.properties.get(&prop.name) {
-                                    match (&v.value, nprop) {
-                                        (
-                                            &style::Value::Variable(ref name),
-                                            val
-                                        ) => {
-                                            vars.insert(name.name.clone(), val.clone());
-                                        },
-                                        (
-                                            &style::Value::Boolean(b),
-                                            &Value::Boolean(nb),
-                                        ) if nb == b => {},
-                                        (
-                                            &style::Value::Integer(i),
-                                            &Value::Integer(ni),
-                                        ) if ni == i => {},
-                                        (
-                                            &style::Value::Float(f),
-                                            &Value::Float(nf),
-                                        ) if nf == f => {},
-                                        (
-                                            &style::Value::String(ref s),
-                                            &Value::String(ref ns),
-                                        ) if ns == s => {},
-                                        _ => continue 'search,
-                                    }
-                                } else {
-                                    continue 'search;
-                                }
-                            }
                         },
                         _ => continue 'search,
+                    }
+                    for (prop, v) in &m.1 {
+                        if let Some(nprop) = cur.properties.get(&prop.name) {
+                            match (&v.value, nprop) {
+                                (
+                                    &style::Value::Variable(ref name),
+                                    val
+                                ) => {
+                                    vars.insert(name.name.clone(), val.clone());
+                                },
+                                (
+                                    &style::Value::Boolean(b),
+                                    &Value::Boolean(nb),
+                                ) if nb == b => {},
+                                (
+                                    &style::Value::Integer(i),
+                                    &Value::Integer(ni),
+                                ) if ni == i => {},
+                                (
+                                    &style::Value::Float(f),
+                                    &Value::Float(nf),
+                                ) if nf == f => {},
+                                (
+                                    &style::Value::String(ref s),
+                                    &Value::String(ref ns),
+                                ) if ns == s => {},
+                                _ => continue 'search,
+                            }
+                        } else {
+                            continue 'search;
+                        }
                     }
                     current = cur.parent.as_ref()
                         .and_then(|v| v.upgrade())

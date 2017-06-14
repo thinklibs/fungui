@@ -99,7 +99,7 @@ pub enum Node {
     ///
     /// Position is the position of the text within
     /// the source (used for debugging)
-    Text(String, Position),
+    Text(String, Position, HashMap<Ident, ValueType>),
 }
 
 /// Contains a value and debugging information
@@ -201,7 +201,8 @@ fn body<I>(input: I) -> ParseResult<Vec<Node>, I>
         let (node, i) = try!(input.combine(|input| spaces()
                 .with(skip_many(parser(skip_comment)))
                 .with(
-                    (position(), parser(parse_string)).map(|v| Node::Text(v.1, SourcePosition::into(v.0)))
+                    (position(), parser(parse_string), optional(parser(properties)))
+                        .map(|v| Node::Text(v.1, SourcePosition::into(v.0), v.2.unwrap_or_default()))
                         .or(parser(parse_element).map(Node::Element))
                 )
                 .parse_lazy(input)

@@ -66,7 +66,7 @@ impl Document {
 
 #[derive(Debug)]
 pub struct Rule {
-    pub matchers: Vec<Matcher>,
+    pub matchers: Vec<(Matcher, HashMap<Ident, ValueType>)>,
     pub styles: HashMap<Ident, ExprType>,
 }
 
@@ -86,22 +86,6 @@ pub enum Matcher {
 pub struct Element {
     /// The name of this element
     pub name: Ident,
-    /// Optional map of propreties
-    pub properties: HashMap<Ident, ValueType>,
-}
-
-/// A node that can be contained within an element.
-///
-/// This is either another element or raw text.
-#[derive(Debug)]
-pub enum Node {
-    /// A sub element
-    Element(Element),
-    /// Text within an element
-    ///
-    /// Position is the position of the text within
-    /// the source (used for debugging)
-    Text(String, Position),
 }
 
 /// Contains a value and debugging information
@@ -170,8 +154,13 @@ fn parse_rule<I>(input: I) -> ParseResult<Rule, I>
 {
     let comments = skip_many(parser(skip_comment));
 
-    let matcher = try(spaces().with(string("@text").map(|_| Matcher::Text)))
-        .or(parser(parse_element).map(|v| Matcher::Element(v)));
+    let matcher = (
+        try(spaces().with(
+            string("@text")
+                .map(|_| Matcher::Text)))
+        .or(parser(parse_element).map(|v| Matcher::Element(v))),
+        optional(parser(properties)).map(|v| v.unwrap_or_default())
+    );
 
     let rule = (
         sep_by1(try(matcher), try(spaces().with(token('>')))),
@@ -193,22 +182,18 @@ fn parse_element<I>(input: I) -> ParseResult<Element, I>
 {
     let comments = skip_many(parser(skip_comment));
 
-    let element = (
-        parser(ident).skip(look_ahead(
-            char('{')
-                .or(char('('))
-                .or(space())
-                .map(|_| ())
-        )),
-        spaces().with(optional(parser(properties))),
-    );
+    let element = parser(ident).skip(look_ahead(
+        char('{')
+            .or(char('('))
+            .or(space())
+            .map(|_| ())
+    ));
 
     spaces()
         .with(comments)
         .with(element)
         .map(|v| Element{
-            name: v.0,
-            properties: v.1.unwrap_or_default(),
+            name: v,
         })
         .parse_stream(input)
 }
