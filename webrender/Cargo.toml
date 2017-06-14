@@ -17,12 +17,12 @@ image = "0.13.0"
 
 [dependencies.webrender]
 git = "https://github.com/thinkofname/webrender"
-branch = "rgba-fix"
+branch = "stylish"
 default-features = false
 features = [ "freetype-lib" ]
 
 [dependencies.webrender_traits]
 git = "https://github.com/thinkofname/webrender"
-branch = "rgba-fix"
+branch = "stylish"
 default-features = false
 features = []
