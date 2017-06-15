@@ -10,4 +10,4 @@ cargo run -p stylish_webrender --example demo --release
 
 ## Screenshots
 
-![demo](demo.png)
+![demo](res/demo.png)
