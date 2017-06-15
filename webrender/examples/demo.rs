@@ -1,9 +1,6 @@
 extern crate stylish;
 extern crate stylish_webrender;
 extern crate sdl2;
-extern crate webrender;
-extern crate webrender_traits;
-extern crate gleam;
 extern crate image;
 
 use sdl2::event::Event;
@@ -49,9 +46,10 @@ impl stylish_webrender::Assets for TestLoader {
                         let mut data = img.into_raw();
                         for d in data.chunks_mut(4) {
                             let a = d[3] as u32;
-                            d[0] = ((d[0] as u32 * a) / 255) as u8;
+                            let r = ((d[0] as u32 * a) / 255) as u8;
+                            d[0] = ((d[2] as u32 * a) / 255) as u8;
                             d[1] = ((d[1] as u32 * a) / 255) as u8;
-                            d[2] = ((d[2] as u32 * a) / 255) as u8;
+                            d[2] = r;
                         }
                         data
                     },
@@ -103,6 +101,9 @@ fn main() {
         .unwrap();
 
     manager.add_node_str(r##"
+background
+"##).unwrap();
+    manager.add_node_str(r##"
 top_bar {
     rust_logo
     "Stylish Demo"
@@ -151,6 +152,13 @@ text_box {
 }
 "##).unwrap();
     manager.load_styles("base", r##"
+root(width=width, height=height) > background {
+    x = 0,
+    y = 0,
+    width = width,
+    height = height,
+    background_color = "#EEEEEE",
+}
 root(width=width, height=height) > top_bar {
     x = 0,
     y = 0,

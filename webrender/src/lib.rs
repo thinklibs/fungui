@@ -84,7 +84,7 @@ impl <A: Assets + 'static> WebRenderer<A> {
             device_pixel_ratio: 1.0,
             resource_override_path: None,
             debug: false,
-            clear_framebuffer: true, // TODO: Make false
+            clear_framebuffer: false,
             .. Default::default()
         };
         let (renderer, sender) = webrender::Renderer::new(gl, options, DeviceUintSize::new(800, 480)).unwrap();

@@ -9,20 +9,22 @@ doc = false
 
 [dependencies]
 stylish = { path = "../" }
-sdl2 = "0.30.0"
 gleam = "0.4.3"
 app_units = "0.4"
 stb_truetype = "0.2.1"
+
+[dev-dependencies]
+sdl2 = "0.30.0"
 image = "0.13.0"
 
 [dependencies.webrender]
-git = "https://github.com/thinkofname/webrender"
-branch = "stylish"
+git = "https://github.com/servo/webrender"
+rev = "568c727b73"
 default-features = false
 features = [ "freetype-lib" ]
 
 [dependencies.webrender_traits]
-git = "https://github.com/thinkofname/webrender"
-branch = "stylish"
+git = "https://github.com/servo/webrender"
+rev = "568c727b73"
 default-features = false
 features = []
