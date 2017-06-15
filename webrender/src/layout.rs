@@ -158,7 +158,7 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
                         }
                     ));
                     self.remaining -= width;
-                    // TODO: Refit draw_rect
+
                     let mut min = (i32::max_value(), i32::max_value());
                     let mut max = (0, 0);
                     for split in &obj.text_splits {
