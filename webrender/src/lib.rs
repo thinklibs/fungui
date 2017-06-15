@@ -105,8 +105,9 @@ impl <A: Assets + 'static> WebRenderer<A> {
                     fonts.clone(),
                     assets.clone(),
                 ))
-            })
+            });
         }
+        manager.add_layout_engine("grid", |obj| Box::new(layout::Grid::new(obj)));
 
         Ok(WebRenderer {
             assets: assets,

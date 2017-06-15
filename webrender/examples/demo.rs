@@ -151,7 +151,45 @@ text_box {
     cbox(w=70,h=24,col="#FF00FF")
 }
 "##).unwrap();
+    manager.add_node_str(r##"
+grid_box {
+    text_box {
+        "Grid layouts"
+    }
+    gradient(a="#83a4d4", b="#b6fbff")
+    text_box {
+        "work as well!"
+    }
+    gradient(a="#C02425", b="#F0CB35")
+    text_box {
+        "somewhat"
+    }
+    gradient(a="#C02425", b="#F0CB35")
+}
+"##).unwrap();
     manager.load_styles("base", r##"
+
+root(width=width, height=height) > grid_box {
+    layout = "grid",
+    x = 16,
+    y = 200,
+    width = width - 32,
+    height = height - 216,
+    shadow = shadow(0.0, 0.0, rgba(0, 0, 0, 1.0), 8.0, 0.0, "inset"),
+    layout = "grid",
+    columns = 3,
+    rows = 2,
+    margin = 16,
+    spacing = 16,
+    force_size = true,
+}
+
+gradient(a=a, b=b) {
+    background_color = gradient(deg(-90.0),
+        stop(0.0, a),
+        stop(1.0, b)),
+}
+
 root(width=width, height=height) > background {
     x = 0,
     y = 0,
@@ -187,10 +225,14 @@ top_bar > @text {
     font_size = 20,
     font_color = rgb(0, 0, 0),
 }
+
 root(width=width, height=height) > text_box {
     x = 16,
     y = 100,
     max_width = width - 32,
+}
+
+text_box {
     background_color = rgba(0, 0, 0, 0.3),
     layout = "lined",
     line_height = 24,

@@ -204,3 +204,85 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
         obj.draw_rect.height = max.1;
     }
 }
+
+
+pub(crate) struct Grid {
+    columns: i32,
+    cell_width: i32,
+    cell_height: i32,
+
+    spacing: i32,
+    margin: i32,
+
+    x: i32,
+    y: i32,
+
+    force_size: bool,
+}
+
+impl Grid {
+    pub(crate) fn new(obj: &RenderObject<Info>) -> Grid {
+        let spacing = obj.get_value::<i32>("spacing").unwrap_or(0);
+        let margin = obj.get_value::<i32>("margin").unwrap_or(0);
+        let width = obj.max_size.0.unwrap_or(obj.draw_rect.width) - margin * 2;
+        let height = obj.max_size.1.unwrap_or(obj.draw_rect.height) - margin * 2;
+
+        let columns = obj.get_value("columns").unwrap_or(1);
+        let rows = obj.get_value("rows").unwrap_or(1);
+
+        let cell_width = (width - (spacing * (columns - 1))) / columns;
+        let cell_height = (height - (spacing * (rows - 1))) / rows;
+
+        Grid {
+            columns: columns,
+            x: 0,
+            y: 0,
+            cell_width: cell_width,
+            cell_height: cell_height,
+            margin: margin,
+            spacing: spacing,
+            force_size: obj.get_value("force_size").unwrap_or(false),
+        }
+    }
+}
+
+impl LayoutEngine<Info> for Grid {
+    fn pre_position_child(&mut self, obj: &mut RenderObject<Info>, _parent: &RenderObject<Info>) {
+        let width = self.cell_width;
+        let height = self.cell_height;
+        obj.draw_rect.width = width;
+        obj.draw_rect.height = height;
+        obj.max_size = (
+            Some(obj.draw_rect.width),
+            Some(obj.draw_rect.height),
+        );
+
+        obj.draw_rect.x = self.margin + self.x * width + self.spacing * self.x;
+        obj.draw_rect.y = self.margin + self.y * height + self.spacing * self.y;
+
+        self.x += 1;
+        if self.x >= self.columns {
+            self.x = 0;
+            self.y += 1;
+        }
+    }
+    fn post_position_child(&mut self, obj: &mut RenderObject<Info>, _parent: &RenderObject<Info>) {
+        if self.force_size {
+            if let Some(w) = obj.max_size.0 {
+                obj.draw_rect.width = w;
+            }
+            if let Some(h) = obj.max_size.1 {
+                obj.draw_rect.height = h;
+            }
+        }
+    }
+
+    fn finalize_layout(&mut self, obj: &mut RenderObject<Info>, _children: Vec<&mut RenderObject<Info>>) {
+        if let Some(w) = obj.max_size.0 {
+            obj.draw_rect.width = w;
+        }
+        if let Some(h) = obj.max_size.1 {
+            obj.draw_rect.height = h;
+        }
+    }
+}
