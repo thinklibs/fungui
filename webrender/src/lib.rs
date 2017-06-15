@@ -339,18 +339,8 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 },
                 Color::Gradient{angle, ref stops} => {
                     let len = width.max(height) / 2.0;
-                    let mut x = len * angle.cos();
-                    let mut y = len * angle.sin();
-                    if x.abs() > width {
-                        let s = width / x;
-                        x = x.signum() * width;
-                        y *= s;
-                    }
-                    if y.abs() > height {
-                        let s = height / x;
-                        y = y.signum() * height;
-                        x *= s;
-                    }
+                    let x = len * angle.cos();
+                    let y = len * angle.sin();
 
                     let g = self.builder.create_gradient(
                         LayoutPoint::new(width / 2.0 - x, height / 2.0 - y),
