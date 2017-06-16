@@ -115,7 +115,7 @@ panel {
 }
 
 "#).unwrap();
-    let node = Node::from_document(doc);
+    let node = Node::<()>::from_document(doc);
 
     for n in node.query()
         .name("panel")

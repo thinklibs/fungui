@@ -3,10 +3,6 @@ name = "stylish_webrender"
 version = "0.1.0"
 authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
 
-[[bin]]
-name = "stylish_webrender"
-doc = false
-
 [dependencies]
 stylish = { path = "../" }
 gleam = "0.4.3"
