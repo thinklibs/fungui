@@ -5,6 +5,7 @@ extern crate image;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use sdl2::mouse::MouseButton;
 
 use std::thread;
 use std::time::Duration;
@@ -167,7 +168,26 @@ grid_box {
     gradient(a="#C02425", b="#F0CB35")
 }
 "##).unwrap();
+    manager.add_node_str(r##"
+dragable(x=200, y=60) {
+    "Drag me!"
+}
+"##).unwrap();
     manager.load_styles("base", r##"
+dragable(x=x, y=y) {
+    x = x,
+    y = y,
+    background_color = "#FF00FF",
+    layout = "lined",
+    max_width = 200,
+    min_width = 16,
+    height = 16,
+}
+dragable > @text {
+    font = "font/FiraSans-Regular",
+    font_size = 12,
+    font_color = rgb(0, 0, 0),
+}
 
 root(width=width, height=height) > grid_box {
     layout = "grid",
@@ -275,6 +295,13 @@ cbox(w=width, h=height, col=color) {
 
     let mut last_hover: Option<stylish::Node<_>> = None;
 
+    struct Drag {
+        target: stylish::Node<stylish_webrender::Info>,
+        x: i32,
+        y: i32,
+    }
+    let mut current_drag: Option<Drag> = None;
+
     'main_loop:
     loop {
         let start = ::std::time::Instant::now();
@@ -287,11 +314,39 @@ cbox(w=width, h=height, col=color) {
                 Event::Quit {..} | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => {
                     break 'main_loop;
                 },
+                Event::MouseButtonDown{mouse_btn: MouseButton::Left, x, y, ..} => {
+                    for n in manager.query_at(x, y)
+                        .matches()
+                    {
+                        if n.get_property::<i32>("x").is_some() && n.get_property::<i32>("y").is_some() {
+                            current_drag = Some(Drag {
+                                target: n,
+                                x: x,
+                                y: y,
+                            });
+                            break;
+                        }
+                    }
+                },
+                Event::MouseButtonUp{mouse_btn: MouseButton::Left, ..} => {
+                    current_drag = None;
+                },
                 Event::MouseMotion{x, y, ..} => {
                     if let Some(last_hover) = last_hover.take() {
                         last_hover.set_property("hover", false);
                     }
-                    if let Some(hover) = manager.query_at(x, y)
+                    if let Some(drag) = current_drag.as_mut() {
+                        let dx = x - drag.x;
+                        let dy = y - drag.y;
+
+                        let lx = drag.target.get_property::<i32>("x").unwrap();
+                        let ly = drag.target.get_property::<i32>("y").unwrap();
+                        drag.target.set_property("x", lx + dx);
+                        drag.target.set_property("y", ly + dy);
+
+                        drag.x = x;
+                        drag.y = y;
+                    } else if let Some(hover) = manager.query_at(x, y)
                         .name("gradient")
                         .matches()
                         .next()
