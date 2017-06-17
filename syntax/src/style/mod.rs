@@ -141,8 +141,10 @@ fn parse_document<I>(input: I) -> ParseResult<Document, I>
           I: Debug,
           I::Range: Debug
 {
+    let rule = (parser(parse_rule), spaces())
+        .map(|v| v.0);
     spaces()
-        .with(many1(try(parser(parse_rule)))) // TODO: Try sucks here
+        .with(many1(rule))
         .map(|e| Document{rules: e})
         .parse_stream(input)
 }
