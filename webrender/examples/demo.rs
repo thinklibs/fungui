@@ -281,6 +281,8 @@ cbox(w=width, h=height, col=color) {
         }
 
         let (width, height) = window.drawable_size();
+        manager.layout(width as i32, height as i32);
+
         renderer.render(&mut manager, width, height);
 
         window.gl_swap_window();

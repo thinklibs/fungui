@@ -145,7 +145,7 @@ impl <A: Assets + 'static> WebRenderer<A> {
             fonts: self.fonts.clone(),
             clip_rect: clip,
             offset: Vec::with_capacity(16),
-        }, width as i32, height as i32);
+        });
 
         self.api.set_window_parameters(
             size,

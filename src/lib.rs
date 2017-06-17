@@ -93,11 +93,8 @@ impl <RInfo> Manager<RInfo> {
         Ok(())
     }
 
-    /// Renders the nodes in this manager by passing the
-    /// layout and styles to the passed visitor.
-    pub fn render<V>(&mut self, visitor: &mut V, width: i32, height: i32)
-        where V: RenderVisitor<RInfo>
-    {
+    /// Positions the nodes in this manager.
+    pub fn layout(&mut self, width: i32, height: i32) {
         let dirty = self.last_size != (width, height);
         self.last_size = (width, height);
         self.root.set_property("width", width);
@@ -112,6 +109,16 @@ impl <RInfo> Manager<RInfo> {
             for c in &e.children {
                 c.layout(&self.styles, &mut AbsoluteLayout,  dirty);
             }
+        }
+    }
+
+    /// Renders the nodes in this manager by passing the
+    /// layout and styles to the passed visitor.
+    pub fn render<V>(&mut self, visitor: &mut V)
+        where V: RenderVisitor<RInfo>
+    {
+        let inner = self.root.inner.borrow();
+        if let NodeValue::Element(ref e) = inner.value {
             for c in &e.children {
                 c.render(&self.styles, visitor);
             }
