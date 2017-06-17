@@ -120,6 +120,11 @@ impl <RInfo> Manager<RInfo> {
         let inner = self.root.inner.borrow();
         if let NodeValue::Element(ref e) = inner.value {
             for c in &e.children {
+                if c.check_dirty() {
+                    c.inner.borrow_mut().render_object = None;
+                }
+            }
+            for c in &e.children {
                 c.layout(&self.styles, &mut AbsoluteLayout,  dirty);
             }
         }
@@ -267,6 +272,23 @@ impl <RInfo> Clone for Node<RInfo> {
 }
 
 impl <RInfo> Node<RInfo> {
+    fn check_dirty(&self) -> bool {
+        {
+            let inner = self.inner.borrow();
+            if inner.dirty {
+                return true;
+            }
+            if let NodeValue::Element(ref e) = inner.value {
+                for c in &e.children {
+                    if c.check_dirty() {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     fn layout<L>(&self, styles: &Styles<RInfo>, layout: &mut L, force_dirty: bool)
         where L: LayoutEngine<RInfo>,
     {
@@ -277,7 +299,7 @@ impl <RInfo> Node<RInfo> {
             let missing_obj = {
                 let inner = self.inner.borrow();
                 inner.render_object
-                    .is_none() || inner.dirty
+                    .is_none()
             };
             if missing_obj || force_dirty {
                 dirty = true;
@@ -305,6 +327,7 @@ impl <RInfo> Node<RInfo> {
                 if let NodeValue::Text(ref txt) = inner.value {
                     obj.text = Some(txt.clone());
                 }
+                inner.dirty = false;
                 inner.render_object = Some(obj);
             }
         }
