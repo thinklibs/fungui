@@ -2,12 +2,19 @@
 use super::*;
 
 pub struct Query<RInfo> {
-    root: Node<RInfo>,
-    rules: Vec<Rule>,
+    pub(crate) root: Node<RInfo>,
+    pub(crate) rules: Vec<Rule>,
+    pub(crate) location: Option<AtLocation>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct AtLocation {
+    pub(crate) x: i32,
+    pub(crate) y: i32,
 }
 
 #[derive(Debug)]
-enum Rule {
+pub(crate) enum Rule {
     /// Matches against child nodes
     Child,
     /// Matches against the element's name
@@ -21,6 +28,7 @@ impl <RInfo> Query<RInfo> {
         Query {
             root: node,
             rules: vec![],
+            location: None,
         }
     }
 
@@ -61,6 +69,7 @@ impl <RInfo> Query<RInfo> {
         QueryIterator {
             nodes: nodes,
             rules: self.rules,
+            location: self.location,
         }
     }
 }
@@ -68,6 +77,7 @@ impl <RInfo> Query<RInfo> {
 pub struct QueryIterator<RInfo> {
     nodes: Vec<Node<RInfo>>,
     rules: Vec<Rule>,
+    location: Option<AtLocation>,
 }
 
 impl <RInfo> Iterator for QueryIterator<RInfo> {
@@ -75,6 +85,31 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
     fn next(&mut self) -> Option<Node<RInfo>> {
         'search:
         while let Some(node) = self.nodes.pop() {
+
+            if let Some(loc) = self.location {
+                let inner = node.inner.borrow();
+                let mut rect = inner.render_object
+                    .as_ref()
+                    .expect("Location query used without calling `layout`")
+                    .draw_rect;
+                let mut cur = inner.parent.as_ref().and_then(|v| v.upgrade());
+                while let Some(p) = cur {
+                    let inner = p.borrow();
+                    let p_rect = inner.render_object
+                        .as_ref()
+                        .expect("Location query used without calling `layout`");
+                    rect.x += p_rect.draw_rect.x;
+                    rect.y += p_rect.draw_rect.y;
+                    cur = inner.parent.as_ref().and_then(|v| v.upgrade());
+                }
+
+                if loc.x < rect.x || loc.x >= rect.x + rect.width
+                    || loc.y < rect.y || loc.y >= rect.y + rect.height
+                {
+                    continue;
+                }
+            }
+
             let mut cur = node.clone();
             for rule in self.rules.iter().rev() {
                 match *rule {

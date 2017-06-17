@@ -190,6 +190,12 @@ gradient(a=a, b=b) {
         stop(1.0, b)),
 }
 
+gradient(a=a, b=b, hover=true) {
+    background_color = gradient(deg(-90.0),
+        stop(0.0, b),
+        stop(1.0, a)),
+}
+
 root(width=width, height=height) > background {
     x = 0,
     y = 0,
@@ -267,21 +273,36 @@ cbox(w=width, h=height, col=color) {
 
     let target_frame_time = Duration::from_secs(1) / TARGET_FPS;
 
+    let mut last_hover: Option<stylish::Node<_>> = None;
+
     'main_loop:
     loop {
         let start = ::std::time::Instant::now();
+
+        let (width, height) = window.drawable_size();
+        manager.layout(width as i32, height as i32);
 
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit {..} | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => {
                     break 'main_loop;
                 },
+                Event::MouseMotion{x, y, ..} => {
+                    if let Some(last_hover) = last_hover.take() {
+                        last_hover.set_property("hover", false);
+                    }
+                    if let Some(hover) = manager.query_at(x, y)
+                        .name("gradient")
+                        .matches()
+                        .next()
+                    {
+                        hover.set_property("hover", true);
+                        last_hover = Some(hover);
+                    }
+                },
                 _ => {}
             }
         }
-
-        let (width, height) = window.drawable_size();
-        manager.layout(width as i32, height as i32);
 
         renderer.render(&mut manager, width, height);
 

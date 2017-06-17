@@ -86,6 +86,19 @@ impl <RInfo> Manager<RInfo> {
         query::Query::new(self.root.clone())
     }
 
+    /// Starts a query looking for elements at the target
+    /// location.
+    pub fn query_at(&self, x: i32, y: i32) -> query::Query<RInfo> {
+        query::Query {
+            root: self.root.clone(),
+            rules: Vec::new(),
+            location: Some(query::AtLocation {
+                x: x,
+                y: y,
+            }),
+        }
+    }
+
     /// Loads a set of styles from the given string.
     pub fn load_styles<'a>(&mut self, name: &str, style_rules: &'a str) -> Result<(), syntax::PError<'a>> {
         let styles = syntax::style::Document::parse(style_rules)?;
@@ -262,9 +275,9 @@ impl <RInfo> Node<RInfo> {
         let mut dirty = force_dirty;
         {
             let missing_obj = {
-                self.inner.borrow()
-                    .render_object
-                    .is_none()
+                let inner = self.inner.borrow();
+                inner.render_object
+                    .is_none() || inner.dirty
             };
             if missing_obj || force_dirty {
                 dirty = true;
@@ -384,7 +397,7 @@ impl <RInfo> Node<RInfo> {
     /// Sets the value of the property on the node.
     pub fn set_property<V: PropertyValue>(&self, key: &str, value: V) {
         let mut inner = self.inner.borrow_mut();
-        inner.render_object = None;
+        inner.dirty = true;
         inner.properties.insert(key.into(), value.convert_into());
     }
 
@@ -413,6 +426,7 @@ impl <RInfo> Node<RInfo> {
                         .map(|(n, v)| (n.name, v.into()))
                         .collect(),
                 render_object: None,
+                dirty: true,
             }))
         }
     }
@@ -429,6 +443,7 @@ impl <RInfo> Node<RInfo> {
                     .map(|(n, v)| (n.name, v.into()))
                     .collect(),
                 render_object: None,
+                dirty: true,
             }))
         };
 
@@ -454,6 +469,7 @@ impl <RInfo> Node<RInfo> {
                 }),
                 properties: HashMap::default(),
                 render_object: Some(RenderObject::default()),
+                dirty: false,
             })),
         }
     }
@@ -464,6 +480,7 @@ struct NodeInner<RInfo> {
     properties: HashMap<String, Value>,
     value: NodeValue<RInfo>,
     render_object: Option<RenderObject<RInfo>>,
+    dirty: bool,
 }
 
 enum NodeValue<RInfo> {
