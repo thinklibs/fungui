@@ -6,7 +6,7 @@ authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
 [dependencies]
 stylish = { path = "../" }
 gleam = "0.4.3"
-app_units = "0.4"
+app_units = "0.5"
 stb_truetype = "0.2.1"
 
 [dev-dependencies]
@@ -15,12 +15,12 @@ image = "0.13.0"
 
 [dependencies.webrender]
 git = "https://github.com/servo/webrender"
-rev = "568c727b73"
+rev = "96375038e904ac85317be53acc987eeab27207b6"
 default-features = false
 features = [ "freetype-lib" ]
 
 [dependencies.webrender_traits]
 git = "https://github.com/servo/webrender"
-rev = "568c727b73"
+rev = "96375038e904ac85317be53acc987eeab27207b6"
 default-features = false
 features = []

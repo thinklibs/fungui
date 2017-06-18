@@ -14,5 +14,5 @@ pub struct Image {
 #[derive(Clone, Copy, Debug)]
 pub enum Components {
     RGB,
-    RGBA,
+    BGRA,
 }

@@ -107,8 +107,8 @@ impl <RInfo> Manager<RInfo> {
     }
 
     /// Positions the nodes in this manager.
-    pub fn layout(&mut self, width: i32, height: i32) {
-        let dirty = self.last_size != (width, height);
+    pub fn layout(&mut self, width: i32, height: i32) -> bool {
+        let force_dirty = self.last_size != (width, height);
         self.last_size = (width, height);
         self.root.set_property("width", width);
         self.root.set_property("height", height);
@@ -119,14 +119,23 @@ impl <RInfo> Manager<RInfo> {
         }
         let inner = self.root.inner.borrow();
         if let NodeValue::Element(ref e) = inner.value {
+            let mut dirty = force_dirty;
             for c in &e.children {
                 if c.check_dirty() {
+                    dirty = true;
                     c.inner.borrow_mut().render_object = None;
                 }
             }
-            for c in &e.children {
-                c.layout(&self.styles, &mut AbsoluteLayout,  dirty);
+            if dirty {
+                for c in &e.children {
+                    c.layout(&self.styles, &mut AbsoluteLayout,  force_dirty);
+                }
+                true
+            } else {
+                false
             }
+        } else {
+            false
         }
     }
 

@@ -42,7 +42,7 @@ impl stylish_webrender::Assets for TestLoader {
                 Some(stylish_webrender::Image {
                     width: img.width(),
                     height: img.height(),
-                    components: stylish_webrender::Components::RGBA,
+                    components: stylish_webrender::Components::BGRA,
                     data: {
                         let mut data = img.into_raw();
                         for d in data.chunks_mut(4) {
@@ -307,7 +307,7 @@ cbox(w=width, h=height, col=color) {
         let start = ::std::time::Instant::now();
 
         let (width, height) = window.drawable_size();
-        manager.layout(width as i32, height as i32);
+        renderer.layout(&mut manager, width, height);
 
         for event in event_pump.poll_iter() {
             match event {

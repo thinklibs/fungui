@@ -48,6 +48,8 @@ pub struct WebRenderer<A> {
 
     images: HashMap<String, ImageKey>,
     fonts: FontMap,
+
+    skip_build: bool,
 }
 
 type FontMap = Rc<RefCell<HashMap<String, Font>>>;
@@ -117,7 +119,16 @@ impl <A: Assets + 'static> WebRenderer<A> {
 
             images: HashMap::new(),
             fonts: fonts,
+            skip_build: false,
         })
+    }
+
+    pub fn layout(&mut self, manager: &mut stylish::Manager<Info>, width: u32, height: u32) {
+        if manager.layout(width as i32, height as i32) {
+            self.skip_build = false;
+        } else {
+            self.skip_build = true;
+        }
     }
 
     pub fn render(&mut self, manager: &mut stylish::Manager<Info>, width: u32, height: u32) {
@@ -127,43 +138,47 @@ impl <A: Assets + 'static> WebRenderer<A> {
         let size = DeviceUintSize::new(width, height);
         let dsize = LayoutSize::new(width as f32, height as f32);
 
-        let mut builder = DisplayListBuilder::new(
-            pipeline,
-            dsize
-        );
+        if !self.skip_build {
+            println!("Build");
+            let mut builder = DisplayListBuilder::new(
+                pipeline,
+                dsize
+            );
 
-        let clip = LayoutRect::new(
-            LayoutPoint::new(0.0, 0.0),
-            dsize,
-        );
+            let clip = LayoutRect::new(
+                LayoutPoint::new(0.0, 0.0),
+                dsize,
+            );
 
-        manager.render(&mut WebBuilder {
-            api: &self.api,
-            builder: &mut builder,
-            assets: self.assets.clone(),
-            images: &mut self.images,
-            fonts: self.fonts.clone(),
-            clip_rect: clip,
-            offset: Vec::with_capacity(16),
-        });
+            manager.render(&mut WebBuilder {
+                api: &self.api,
+                builder: &mut builder,
+                assets: self.assets.clone(),
+                images: &mut self.images,
+                fonts: self.fonts.clone(),
+                clip_rect: clip,
+                offset: Vec::with_capacity(16),
+            });
 
-        self.api.set_window_parameters(
-            size,
-            DeviceUintRect::new(
-                DeviceUintPoint::zero(),
+            self.api.set_window_parameters(
                 size,
-            )
-        );
-        self.api.set_display_list(
-            None,
-            self.frame_id,
-            dsize,
-            builder.finalize(),
-            false,
-        );
-        self.api.generate_frame(None);
+                DeviceUintRect::new(
+                    DeviceUintPoint::zero(),
+                    size,
+                )
+            );
+            self.api.set_display_list(
+                None,
+                self.frame_id,
+                dsize,
+                builder.finalize(),
+                false,
+            );
+            self.api.generate_frame(None);
+        }
 
         self.renderer.render(size);
+        self.skip_build = false;
     }
 }
 
@@ -294,7 +309,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                                     ImageDescriptor {
                                         format: match img.components {
                                             Components::RGB => ImageFormat::RGB8,
-                                            Components::RGBA => ImageFormat::RGBA8,
+                                            Components::BGRA => ImageFormat::BGRA8,
                                         },
                                         width: img.width,
                                         height: img.height,
@@ -302,7 +317,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                                         offset: 0,
                                         is_opaque: match img.components {
                                             Components::RGB => true,
-                                            Components::RGBA => false,
+                                            Components::BGRA => false,
                                         },
                                     },
                                     ImageData::new(img.data),
