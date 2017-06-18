@@ -139,7 +139,6 @@ impl <A: Assets + 'static> WebRenderer<A> {
         let dsize = LayoutSize::new(width as f32, height as f32);
 
         if !self.skip_build {
-            println!("Build");
             let mut builder = DisplayListBuilder::new(
                 pipeline,
                 dsize
