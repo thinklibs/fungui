@@ -10,6 +10,8 @@ use sdl2::mouse::MouseButton;
 
 use std::thread;
 use std::time::Duration;
+use std::env;
+use std::fs;
 
 const TARGET_FPS: u32 = 60;
 
@@ -17,7 +19,6 @@ struct TestLoader;
 
 impl stylish_webrender::Assets for TestLoader {
     fn load_font(&self, name: &str) -> Option<Vec<u8>> {
-        use std::fs;
         use std::io::Read;
         let mut file = if let Ok(f) = fs::File::open(format!("res/{}.ttf", name)) {
             f
@@ -27,7 +28,6 @@ impl stylish_webrender::Assets for TestLoader {
         Some(data)
     }
     fn load_image(&self, name: &str) -> Option<stylish_webrender::Image> {
-        use std::fs;
         use std::io::BufReader;
         let file = BufReader::new(if let Ok(f) = fs::File::open(format!("res/{}.png", name)) {
             f
@@ -91,6 +91,10 @@ fn main() {
     window.gl_make_current(&context).unwrap();
 
     let mut manager = stylish::Manager::new();
+
+    if fs::metadata("./res").ok().map_or(true, |v| !v.is_dir()) {
+        env::set_current_dir("../").unwrap();
+    }
 
     let mut renderer = stylish_webrender::WebRenderer::new(
         |n| video_subsystem.gl_get_proc_address(n),
