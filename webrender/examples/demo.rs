@@ -397,8 +397,17 @@ cbox(w=width, h=height, col=color) {
                         .matches()
                     {
                         if node.get_value::<bool>("can_scroll").unwrap_or(false) {
+                            let mut max = 0;
+                            for n in node.children() {
+                                let obj = n.render_object();
+                                let m = obj.draw_rect.y + obj.draw_rect.height;
+                                if m > max {
+                                    max = m;
+                                }
+                            }
+                            max -= node.render_object().draw_rect.height;
                             let oy = node.get_property::<f64>("scroll_y").unwrap_or(0.0);
-                            node.set_property("scroll_y", oy + y as f64 * 5.0);
+                            node.set_property("scroll_y", (oy + y as f64 * 5.0).min(0.0).max(-max as f64));
                             break;
                         }
                     }

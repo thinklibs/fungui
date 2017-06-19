@@ -12,7 +12,7 @@ pub type SResult<T> = error::Result<T>;
 use error::ErrorKind;
 
 use std::rc::{Rc, Weak};
-use std::cell::RefCell;
+use std::cell::{RefCell, Ref};
 use std::collections::HashMap;
 use std::any::Any;
 
@@ -411,6 +411,16 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Returns a vector containing the child nodes of this
+    /// node.
+    pub fn children(&self) -> Vec<Node<RInfo>> {
+        if let NodeValue::Element(ref e) = self.inner.borrow().value {
+            Clone::clone(&e.children)
+        } else {
+            Vec::new()
+        }
+    }
+
     /// Returns the name of the node if it has one
     pub fn name(&self) -> Option<String> {
         let inner = self.inner.borrow();
@@ -418,6 +428,14 @@ impl <RInfo> Node<RInfo> {
             NodeValue::Element(ref e) => Some(e.name.clone()),
             NodeValue::Text(_) => None,
         }
+    }
+
+    /// Returns the `RenderObject` for this node.
+    ///
+    /// Must be called after a `layout` call
+    pub fn render_object(&self) -> Ref<RenderObject<RInfo>> {
+        let inner = self.inner.borrow();
+        Ref::map(inner, |v| v.render_object.as_ref().unwrap())
     }
 
     /// Returns the value of the property if it has it set
