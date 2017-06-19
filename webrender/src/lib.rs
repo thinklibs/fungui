@@ -144,18 +144,12 @@ impl <A: Assets + 'static> WebRenderer<A> {
                 dsize
             );
 
-            let clip = LayoutRect::new(
-                LayoutPoint::new(0.0, 0.0),
-                dsize,
-            );
-
             manager.render(&mut WebBuilder {
                 api: &self.api,
                 builder: &mut builder,
                 assets: self.assets.clone(),
                 images: &mut self.images,
                 fonts: self.fonts.clone(),
-                clip_rect: clip,
                 offset: Vec::with_capacity(16),
             });
 
@@ -206,7 +200,6 @@ struct WebBuilder<'a, A: 'a> {
     images: &'a mut HashMap<String, ImageKey>,
     fonts: FontMap,
 
-    clip_rect: LayoutRect,
     offset: Vec<LayoutPoint>,
 }
 
@@ -341,14 +334,14 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         let info = obj.render_info.as_ref().unwrap();
 
         if let Some(key) = info.image {
-            let clip = self.builder.push_clip_region(&self.clip_rect, None, None);
+            let clip = self.builder.push_clip_region(&rect, None, None);
             self.builder.push_image(rect, clip, rect.size, LayoutSize::zero(), ImageRendering::Auto, key);
         }
 
         if let Some(col) = info.background_color.as_ref() {
             match *col {
                 Color::Solid(col) => {
-                    let clip = self.builder.push_clip_region(&self.clip_rect, None, None);
+                    let clip = self.builder.push_clip_region(&rect, None, None);
                     self.builder.push_rect(rect, clip, col);
                 },
                 Color::Gradient{angle, ref stops} => {
@@ -362,7 +355,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         stops.clone(),
                         ExtendMode::Clamp,
                     );
-                    let clip = self.builder.push_clip_region(&self.clip_rect, None, None);
+                    let clip = self.builder.push_clip_region(&rect, None, None);
                     self.builder.push_gradient(
                         rect, clip,
                         g,
@@ -374,7 +367,11 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         }
 
         for shadow in &info.shadows {
-            let clip = self.builder.push_clip_region(&self.clip_rect, None, None);
+            let clip = self.builder.push_clip_region(
+                &rect.inflate(shadow.blur_radius, shadow.blur_radius)
+                    .translate(&shadow.offset),
+                None, None
+            );
             self.builder.push_box_shadow(
                 rect,
                 clip,
@@ -389,7 +386,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         }
 
         if let Some(txt) = info.text.as_ref() {
-            let clip = self.builder.push_clip_region(&self.clip_rect, None, None);
+            let clip = self.builder.push_clip_region(&rect, None, None);
             self.builder.push_text(
                 rect,
                 clip,
