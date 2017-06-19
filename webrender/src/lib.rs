@@ -182,6 +182,9 @@ pub struct Info {
     shadows: Vec<Shadow>,
 
     text: Option<Text>,
+
+    clip_id: Option<ClipId>,
+    clip_overflow: bool,
 }
 
 #[derive(Debug)]
@@ -328,10 +331,20 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         .cloned())
                     .unwrap_or_else(Vec::new),
                 text: text,
+                clip_id: None,
+                clip_overflow: obj.get_value::<bool>("clip_overflow").unwrap_or(false),
             });
         }
 
-        let info = obj.render_info.as_ref().unwrap();
+        let info = obj.render_info.as_mut().unwrap();
+
+        info.clip_id = if info.clip_overflow {
+            let clip = self.builder.push_clip_region(&rect, None, None);
+            let id = self.builder.define_clip(rect, clip, None);
+            Some(id)
+        } else {
+            None
+        };
 
         if let Some(key) = info.image {
             let clip = self.builder.push_clip_region(&rect, None, None);
@@ -399,10 +412,17 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
             );
         }
 
+        if let Some(clip_id) = info.clip_id {
+            self.builder.push_clip_id(clip_id);
+        }
         self.offset.push(rect.origin);
     }
 
-    fn visit_end(&mut self, _obj: &mut stylish::RenderObject<Info>) {
+    fn visit_end(&mut self, obj: &mut stylish::RenderObject<Info>) {
+        let info = obj.render_info.as_mut().unwrap();
+        if let Some(_clip_id) = info.clip_id {
+            self.builder.pop_clip_id();
+        }
         self.offset.pop();
     }
 }

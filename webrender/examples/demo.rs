@@ -264,6 +264,7 @@ text_box {
     line_height = 24,
     auto_size = true,
     shadow = shadow(4.0, 4.0, rgba(0, 0, 0, 0.5), 8.0, 0.0, "outset"),
+    clip_overflow = true,
 }
 text_box > @text {
     font = "font/FiraSans-Regular",
@@ -285,7 +286,7 @@ text_box > rust_logo {
 
 cbox(w=width, h=height, col=color) {
     width = width,
-    height= height,
+    height = height,
     background_color = color,
 }
 
