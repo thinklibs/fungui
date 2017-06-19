@@ -433,6 +433,21 @@ impl <RInfo> Node<RInfo> {
         inner.properties.insert(key.into(), value.convert_into());
     }
 
+    /// Gets the value from the style rules for this node
+    pub fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
+        let inner = self.inner.borrow();
+        inner.render_object.as_ref()
+            .and_then(|v| v.get_value(name))
+    }
+
+    /// Gets the custom value from the style rules for this node
+    pub fn get_custom_value<V: Clone + CustomValue + 'static>(&self, name: &str) -> Option<V> {
+        let inner = self.inner.borrow();
+        inner.render_object.as_ref()
+            .and_then(|v| v.get_custom_value(name))
+            .map(|v| Clone::clone(v))
+    }
+
     /// Begins a query on this node
     pub fn query(&self) -> query::Query<RInfo> {
         query::Query::new(self.clone())

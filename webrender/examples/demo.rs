@@ -169,6 +169,15 @@ grid_box {
 }
 "##).unwrap();
     manager.add_node_str(r##"
+scroll_box {
+    "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Quisque pharetra arcu vel urna tincidunt consectetur. Vivamus non nibh at mauris consectetur egestas. Ut pellentesque lorem et elit venenatis, nec rutrum lorem interdum. Ut pellentesque velit sed leo pulvinar blandit. Donec et eros posuere, ultrices tellus nec, dapibus ex. In elementum ligula vel tristique rutrum. Fusce id quam massa. Pellentesque in lectus eu felis venenatis gravida. Donec et velit vel turpis auctor imperdiet. Fusce eleifend sit amet lacus a placerat. Sed suscipit nisi nec nulla pretium accumsan. Curabitur aliquet sed magna id lobortis."
+
+    "Vestibulum cursus nulla a sollicitudin semper. Duis eu est malesuada orci placerat porttitor vel fringilla libero. Mauris vitae nulla quis turpis vestibulum tincidunt eget egestas tortor. Quisque tincidunt eleifend nunc viverra venenatis. Phasellus ullamcorper libero id enim volutpat malesuada quis in sem. Fusce augue nibh, aliquam congue nibh quis, bibendum tempor libero. Mauris id lectus ac justo imperdiet accumsan sit amet eget eros. Cras orci odio, facilisis ut mollis id, faucibus ac lectus. Integer diam nibh, lacinia sit amet velit non, mattis ullamcorper elit."
+
+    "Curabitur nec tortor at arcu feugiat fermentum id quis ex. Pellentesque leo erat, tempus vitae auctor luctus, auctor non dui. In hac habitasse platea dictumst. Cras posuere ullamcorper viverra. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. In lobortis mauris enim, ut bibendum lorem tincidunt eget. Etiam faucibus mollis tincidunt. Cras efficitur vestibulum pretium. Nunc elementum tellus at laoreet interdum. Quisque placerat, arcu sed pulvinar finibus, orci ante pretium tellus, sit amet ultricies risus odio non massa. Praesent fermentum velit eu tortor egestas, id convallis lectus cursus. Nam non fringilla nunc. Fusce a laoreet enim, non gravida diam. Curabitur malesuada, orci ac pellentesque consectetur, augue lacus tincidunt nunc, sit amet posuere massa turpis non lacus. Vivamus pretium interdum suscipit. Vivamus bibendum interdum dolor."
+}
+"##).unwrap();
+    manager.add_node_str(r##"
 dragable(x=200, y=60) {
     "Drag me!"
 }
@@ -193,7 +202,7 @@ root(width=width, height=height) > grid_box {
     layout = "grid",
     x = 16,
     y = 200,
-    width = width - 32,
+    width = (width / 2) - 32,
     height = height - 216,
     shadow = shadow(0.0, 0.0, rgba(0, 0, 0, 1.0), 8.0, 0.0, "inset"),
     layout = "grid",
@@ -202,6 +211,31 @@ root(width=width, height=height) > grid_box {
     margin = 16,
     spacing = 16,
     force_size = true,
+}
+
+root(width=width, height=height) > scroll_box {
+    layout = "lined",
+    x = (width / 2) + 16,
+    y = 200,
+    width = (width / 2) - 32,
+    height = height - 216,
+    layout = "lined",
+    background_color = "#F49E42",
+    shadow = shadows(
+        shadow(4.0, 4.0, rgba(0, 0, 0, 0.28), 8.0, 0.0, "outset"),
+        shadow(0.0, 0.0, rgba(0, 0, 0, 0.14), 4.0, 0.0, "outset")),
+    clip_overflow = true,
+    can_scroll = true,
+}
+
+scroll_box(scroll_y=scroll_y) {
+    scroll_y = scroll_y,
+}
+
+scroll_box > @text {
+    font = "font/FiraSans-Regular",
+    font_size = 17,
+    font_color = rgb(0, 0, 0),
 }
 
 gradient(a=a, b=b) {
@@ -302,6 +336,7 @@ cbox(w=width, h=height, col=color) {
         y: i32,
     }
     let mut current_drag: Option<Drag> = None;
+    let mut mouse_pos = (0, 0);
 
     'main_loop:
     loop {
@@ -333,6 +368,7 @@ cbox(w=width, h=height, col=color) {
                     current_drag = None;
                 },
                 Event::MouseMotion{x, y, ..} => {
+                    mouse_pos = (x, y);
                     if let Some(last_hover) = last_hover.take() {
                         last_hover.set_property("hover", false);
                     }
@@ -354,6 +390,17 @@ cbox(w=width, h=height, col=color) {
                     {
                         hover.set_property("hover", true);
                         last_hover = Some(hover);
+                    }
+                },
+                Event::MouseWheel{y, ..} => {
+                    for node in manager.query_at(mouse_pos.0, mouse_pos.1)
+                        .matches()
+                    {
+                        if node.get_value::<bool>("can_scroll").unwrap_or(false) {
+                            let oy = node.get_property::<f64>("scroll_y").unwrap_or(0.0);
+                            node.set_property("scroll_y", oy + y as f64 * 5.0);
+                            break;
+                        }
                     }
                 },
                 _ => {}

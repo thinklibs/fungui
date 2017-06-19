@@ -185,6 +185,8 @@ pub struct Info {
 
     clip_id: Option<ClipId>,
     clip_overflow: bool,
+
+    scroll_offset: LayoutVector2D,
 }
 
 #[derive(Debug)]
@@ -333,6 +335,10 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 text: text,
                 clip_id: None,
                 clip_overflow: obj.get_value::<bool>("clip_overflow").unwrap_or(false),
+                scroll_offset: LayoutVector2D::new(
+                    obj.get_value::<f64>("scroll_x").unwrap_or(0.0) as f32,
+                    obj.get_value::<f64>("scroll_y").unwrap_or(0.0) as f32,
+                ),
             });
         }
 
@@ -415,7 +421,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         if let Some(clip_id) = info.clip_id {
             self.builder.push_clip_id(clip_id);
         }
-        self.offset.push(rect.origin);
+        self.offset.push(rect.origin + info.scroll_offset);
     }
 
     fn visit_end(&mut self, obj: &mut stylish::RenderObject<Info>) {
