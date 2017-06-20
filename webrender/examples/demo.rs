@@ -426,6 +426,9 @@ cbox(w=width, h=height, col=color) {
                                 }
                             }
                             max -= node.render_object().draw_rect.height;
+                            if max < 0 {
+                                max = 0;
+                            }
                             let oy = node.get_property::<f64>("scroll_y").unwrap_or(0.0);
                             node.set_property("scroll_y", (oy + y as f64 * 5.0).min(0.0).max(-max as f64));
                             break;
