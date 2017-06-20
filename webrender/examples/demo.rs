@@ -226,6 +226,8 @@ root(width=width, height=height) > scroll_box {
         shadow(0.0, 0.0, rgba(0, 0, 0, 0.14), 4.0, 0.0, "outset")),
     clip_overflow = true,
     can_scroll = true,
+    border_width = border_width(27.0),
+    border = border_image("border", 27, 27),
 }
 
 scroll_box(scroll_y=scroll_y) {

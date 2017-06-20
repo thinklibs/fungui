@@ -5,6 +5,7 @@ extern crate gleam;
 extern crate stylish;
 extern crate app_units;
 extern crate stb_truetype;
+extern crate euclid;
 
 mod assets;
 pub use assets::*;
@@ -82,6 +83,7 @@ impl <A: Assets + 'static> WebRenderer<A> {
         manager.add_func_raw("border", border::border);
         manager.add_func_raw("bside", border::border_side);
         manager.add_func_raw("border_width", border::border_width);
+        manager.add_func_raw("border_image", border::border_image);
 
         let fonts = Rc::new(RefCell::new(HashMap::new()));
         let assets = Rc::new(assets);
@@ -300,39 +302,41 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 None
             };
 
+            let mut load_image = |v| match self.images.entry(v) {
+                    Entry::Occupied(v) => Some(*v.get()),
+                    Entry::Vacant(v) => {
+                        if let Some(img) = self.assets.load_image(v.key()) {
+                            let key = self.api.generate_image_key();
+                            self.api.add_image(
+                                key,
+                                ImageDescriptor {
+                                    format: match img.components {
+                                        Components::RGB => ImageFormat::RGB8,
+                                        Components::BGRA => ImageFormat::BGRA8,
+                                    },
+                                    width: img.width,
+                                    height: img.height,
+                                    stride: None,
+                                    offset: 0,
+                                    is_opaque: match img.components {
+                                        Components::RGB => true,
+                                        Components::BGRA => false,
+                                    },
+                                },
+                                ImageData::new(img.data),
+                                None
+                            );
+                            Some(*v.insert(key))
+                        } else {
+                            None
+                        }
+                    },
+                };
+
             obj.render_info = Some(Info {
                 background_color: Color::get(obj, "background_color"),
                 image: obj.get_value::<String>("image")
-                    .and_then(|v| match self.images.entry(v) {
-                        Entry::Occupied(v) => Some(*v.get()),
-                        Entry::Vacant(v) => {
-                            if let Some(img) = self.assets.load_image(v.key()) {
-                                let key = self.api.generate_image_key();
-                                self.api.add_image(
-                                    key,
-                                    ImageDescriptor {
-                                        format: match img.components {
-                                            Components::RGB => ImageFormat::RGB8,
-                                            Components::BGRA => ImageFormat::BGRA8,
-                                        },
-                                        width: img.width,
-                                        height: img.height,
-                                        stride: None,
-                                        offset: 0,
-                                        is_opaque: match img.components {
-                                            Components::RGB => true,
-                                            Components::BGRA => false,
-                                        },
-                                    },
-                                    ImageData::new(img.data),
-                                    None
-                                );
-                                Some(*v.insert(key))
-                            } else {
-                                None
-                            }
-                        },
-                    }),
+                    .and_then(|v| load_image(v)),
                 shadows: obj.get_custom_value::<Shadow>("shadow")
                     .cloned()
                     .map(|v| vec![v])
@@ -358,6 +362,13 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                             bottom: bottom,
 
                             radius: BorderRadius::uniform(obj.get_value::<f64>("border_radius").unwrap_or(0.0) as f32),
+                        }),
+                        border::Border::Image{ref image, patch, repeat} => BorderDetails::Image(ImageBorder {
+                            image_key: load_image(image.clone()).unwrap(),
+                            patch: patch,
+                            outset: euclid::SideOffsets2D::new(0.0, 0.0, 0.0, 0.0),
+                            repeat_horizontal: repeat,
+                            repeat_vertical: repeat,
                         }),
                     }),
 

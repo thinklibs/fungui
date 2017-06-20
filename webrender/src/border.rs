@@ -51,6 +51,11 @@ pub enum Border {
         top: BorderSide,
         right: BorderSide,
         bottom: BorderSide,
+    },
+    Image {
+        image: String,
+        patch: NinePatchDescriptor,
+        repeat: RepeatMode,
     }
 }
 
@@ -98,6 +103,43 @@ pub fn border(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
     })))
 }
 
+
+pub fn border_image(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
+    use euclid;
+    let image = params.get(0)
+        .ok_or_else(|| ErrorKind::MissingParameter("image"))?
+        .get_value::<String>()
+        .ok_or_else(|| ErrorKind::IncorrectType("image", "string"))?;
+
+    let pwidth = params.get(1)
+        .ok_or_else(|| ErrorKind::MissingParameter("width"))?
+        .get_value::<i32>()
+        .ok_or_else(|| ErrorKind::IncorrectType("width", "integer"))?;
+
+    let pheight = params.get(2)
+        .and_then(|v| v.get_value::<i32>())
+        .unwrap_or(pwidth);
+
+    let repeat = params.get(2)
+        .and_then(|v| v.get_value::<String>())
+        .map(|v| match v.as_ref() {
+            "stretch" => RepeatMode::Stretch,
+            "round" => RepeatMode::Round,
+            "space" => RepeatMode::Space,
+            _ => RepeatMode::Repeat,
+        })
+        .unwrap_or(RepeatMode::Repeat);
+
+    Ok(stylish::Value::Any(Box::new(Border::Image {
+        image: image,
+        patch: NinePatchDescriptor {
+            width: pwidth as u32 * 3,
+            height: pheight as u32 * 3,
+            slice: euclid::SideOffsets2D::new(pheight as u32, pwidth as u32, pheight as u32, pwidth as u32), // TODO: eh?
+        },
+        repeat: repeat,
+    })))
+}
 
 pub fn border_side(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
     let color = Color::get_val(params.get(0)
