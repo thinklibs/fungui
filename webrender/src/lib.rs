@@ -363,9 +363,10 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
                             radius: BorderRadius::uniform(obj.get_value::<f64>("border_radius").unwrap_or(0.0) as f32),
                         }),
-                        border::Border::Image{ref image, patch, repeat} => BorderDetails::Image(ImageBorder {
+                        border::Border::Image{ref image, patch, repeat, fill} => BorderDetails::Image(ImageBorder {
                             image_key: load_image(image.clone()).unwrap(),
                             patch: patch,
+                            fill: fill,
                             outset: euclid::SideOffsets2D::new(0.0, 0.0, 0.0, 0.0),
                             repeat_horizontal: repeat,
                             repeat_vertical: repeat,

@@ -56,6 +56,7 @@ pub enum Border {
         image: String,
         patch: NinePatchDescriptor,
         repeat: RepeatMode,
+        fill: bool,
     }
 }
 
@@ -130,6 +131,10 @@ pub fn border_image(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Va
         })
         .unwrap_or(RepeatMode::Repeat);
 
+    let fill = params.get(4)
+        .and_then(|v| v.get_value::<bool>())
+        .unwrap_or(false);
+
     Ok(stylish::Value::Any(Box::new(Border::Image {
         image: image,
         patch: NinePatchDescriptor {
@@ -138,6 +143,7 @@ pub fn border_image(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Va
             slice: euclid::SideOffsets2D::new(pheight as u32, pwidth as u32, pheight as u32, pwidth as u32), // TODO: eh?
         },
         repeat: repeat,
+        fill: fill,
     })))
 }
 
