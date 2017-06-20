@@ -116,7 +116,7 @@ impl <'a> Rule<'a> {
             match val {
                 Ok(val) => V::convert_from(&val),
                 Err(err) => {
-                    println!("{}", err);
+                    println!("{:?}", err);
                     None
                 },
             }

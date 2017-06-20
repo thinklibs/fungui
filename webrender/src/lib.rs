@@ -14,6 +14,7 @@ use color::*;
 mod shadow;
 use shadow::*;
 mod layout;
+mod border;
 
 use webrender::*;
 use webrender_traits::*;
@@ -78,6 +79,9 @@ impl <A: Assets + 'static> WebRenderer<A> {
         manager.add_func_raw("deg", math::deg);
         manager.add_func_raw("shadow", shadow);
         manager.add_func_raw("shadows", shadows);
+        manager.add_func_raw("border", border::border);
+        manager.add_func_raw("bside", border::border_side);
+        manager.add_func_raw("border_width", border::border_width);
 
         let fonts = Rc::new(RefCell::new(HashMap::new()));
         let assets = Rc::new(assets);
@@ -182,6 +186,9 @@ pub struct Info {
     shadows: Vec<Shadow>,
 
     text: Option<Text>,
+
+    border_widths: BorderWidths,
+    border: Option<BorderDetails>,
 
     clip_id: Option<ClipId>,
     clip_overflow: bool,
@@ -333,6 +340,27 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         .cloned())
                     .unwrap_or_else(Vec::new),
                 text: text,
+
+                border_widths: obj.get_custom_value::<border::BorderWidthInfo>("border_width")
+                    .map(|v| v.widths)
+                    .unwrap_or(BorderWidths {
+                        left: 0.0,
+                        top: 0.0,
+                        right: 0.0,
+                        bottom: 0.0,
+                    }),
+                border: obj.get_custom_value::<border::Border>("border")
+                    .map(|v| match *v {
+                        border::Border::Normal{left, top, right, bottom} => BorderDetails::Normal(NormalBorder {
+                            left: left,
+                            top: top,
+                            right: right,
+                            bottom: bottom,
+
+                            radius: BorderRadius::uniform(obj.get_value::<f64>("border_radius").unwrap_or(0.0) as f32),
+                        }),
+                    }),
+
                 clip_id: None,
                 clip_overflow: obj.get_value::<bool>("clip_overflow").unwrap_or(false),
                 scroll_offset: LayoutVector2D::new(
@@ -415,6 +443,16 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 app_units::Au::from_px(txt.size),
                 0.0,
                 None
+            );
+        }
+
+        if let Some(border) = info.border {
+            let clip = self.builder.push_clip_region(&rect, None, None);
+            self.builder.push_border(
+                rect,
+                clip,
+                info.border_widths,
+                border,
             );
         }
 

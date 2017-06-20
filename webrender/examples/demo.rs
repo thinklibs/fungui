@@ -311,6 +311,14 @@ text_box > @text(bold=true) {
 text_box > @text(color=color) {
     font_color = color,
 }
+grid_box > text_box {
+    border_width = border_width(8.0, 8.0, 8.0, 8.0),
+    border = border(
+        bside("#444444", "none"),
+        bside("#444444", "none"),
+        bside("#444444", "none"),
+        bside("#444444", "inset")),
+}
 
 text_box > rust_logo {
     width = 24,
