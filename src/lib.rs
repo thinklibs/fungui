@@ -422,6 +422,39 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Creates a new element with the given name.
+    pub fn new<S>(name: S) -> Node<RInfo>
+        where S: Into<String>
+    {
+        Node {
+            inner: Rc::new(RefCell::new(NodeInner {
+                parent: None,
+                value: NodeValue::Element(Element {
+                    name: name.into(),
+                    children: Vec::new(),
+                }),
+                properties: HashMap::new(),
+                render_object: None,
+                dirty: true,
+            }))
+        }
+    }
+
+    /// Creates a new text node with the given text.
+    pub fn new_text<S>(text: S) -> Node<RInfo>
+        where S: Into<String>
+    {
+        Node {
+            inner: Rc::new(RefCell::new(NodeInner {
+                parent: None,
+                value: NodeValue::Text(text.into()),
+                properties: HashMap::new(),
+                render_object: None,
+                dirty: true,
+            }))
+        }
+    }
+
     /// Adds the passed node as a child to this node.
     ///
     /// This panics if the passed node already has a parent
