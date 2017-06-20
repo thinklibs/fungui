@@ -198,12 +198,12 @@ dragable > @text {
     font_color = rgb(0, 0, 0),
 }
 
-root(width=width, height=height) > grid_box {
+grid_box {
     layout = "grid",
     x = 16,
     y = 200,
-    width = (width / 2) - 32,
-    height = height - 216,
+    width = (parent_width / 2) - 32,
+    height = parent_height - 216,
     shadow = shadow(0.0, 0.0, rgba(0, 0, 0, 1.0), 8.0, 0.0, "inset"),
     layout = "grid",
     columns = 3,
@@ -213,12 +213,12 @@ root(width=width, height=height) > grid_box {
     force_size = true,
 }
 
-root(width=width, height=height) > scroll_box {
+scroll_box {
     layout = "lined",
-    x = (width / 2) + 16,
+    x = (parent_width / 2) + 16,
     y = 200,
-    width = (width / 2) - 32,
-    height = height - 216,
+    width = (parent_width / 2) - 32,
+    height = parent_height - 216,
     layout = "lined",
     background_color = "#F49E42",
     shadow = shadows(
@@ -252,11 +252,11 @@ gradient(a=a, b=b, hover=true) {
         stop(1.0, a)),
 }
 
-root(width=width, height=height) > background {
+background {
     x = 0,
     y = 0,
-    width = width,
-    height = height,
+    width = parent_width,
+    height = parent_height,
     background_color = "#EEEEEE",
 }
 root(width=width, height=height) > top_bar {
@@ -288,10 +288,10 @@ top_bar > @text {
     font_color = rgb(0, 0, 0),
 }
 
-root(width=width, height=height) > text_box {
+text_box {
     x = 16,
     y = 100,
-    max_width = width - 32,
+    max_width = parent_width - 32,
 }
 
 text_box {

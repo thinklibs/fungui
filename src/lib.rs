@@ -113,9 +113,16 @@ impl <RInfo> Manager<RInfo> {
         self.root.set_property("width", width);
         self.root.set_property("height", height);
         {
-            // TODO: Hack
             let mut inner = self.root.inner.borrow_mut();
-            inner.render_object = Some(RenderObject::default());
+            inner.render_object = Some(RenderObject {
+                draw_rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: width,
+                    height: height,
+                },
+                .. RenderObject::default()
+            });
         }
         let inner = self.root.inner.borrow();
         if let NodeValue::Element(ref e) = inner.value {
@@ -313,11 +320,17 @@ impl <RInfo> Node<RInfo> {
             if missing_obj || force_dirty {
                 dirty = true;
                 let mut obj = RenderObject::default();
+                let parent_rect = if let Some(parent) = self.inner.borrow().parent.as_ref().and_then(|v| v.upgrade()) {
+                    let parent = parent.borrow();
+                    parent.render_object.as_ref().unwrap().draw_rect
+                } else {
+                    Rect{x: 0, y: 0, width: 0, height: 0}
+                };
                 for rule in styles.find_matching_rules(self) {
                     for key in rule.syn.styles.keys() {
                         let key = &key.name;
                         if let Entry::Vacant(e) = obj.vars.entry(key.clone()) {
-                            if let Some(v) = rule.get_value(styles, key) {
+                            if let Some(v) = rule.get_value(styles, parent_rect, key) {
                                 e.insert(v);
                             }
                         }
