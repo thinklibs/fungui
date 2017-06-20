@@ -15,12 +15,12 @@ image = "0.13.0"
 
 [dependencies.webrender]
 git = "https://github.com/servo/webrender"
-rev = "96375038e904ac85317be53acc987eeab27207b6"
+rev = "37d4ecc4449b5762ec617af6df903ba84e23601d"
 default-features = false
 features = [ "freetype-lib" ]
 
 [dependencies.webrender_traits]
 git = "https://github.com/servo/webrender"
-rev = "96375038e904ac85317be53acc987eeab27207b6"
+rev = "37d4ecc4449b5762ec617af6df903ba84e23601d"
 default-features = false
 features = []
