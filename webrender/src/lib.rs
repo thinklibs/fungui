@@ -384,14 +384,6 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
         let info = obj.render_info.as_mut().unwrap();
 
-        info.clip_id = if info.clip_overflow {
-            let clip = self.builder.push_clip_region(&rect, None, None);
-            let id = self.builder.define_clip(rect, clip, None);
-            Some(id)
-        } else {
-            None
-        };
-
         if let Some(key) = info.image {
             let clip = self.builder.push_clip_region(&rect, None, None);
             self.builder.push_image(rect, clip, rect.size, LayoutSize::zero(), ImageRendering::Auto, key);
@@ -468,9 +460,15 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
             );
         }
 
-        if let Some(clip_id) = info.clip_id {
-            self.builder.push_clip_id(clip_id);
-        }
+        info.clip_id = if info.clip_overflow {
+            let clip = self.builder.push_clip_region(&rect, None, None);
+            let id = self.builder.define_clip(rect, clip, None);
+            self.builder.push_clip_id(id);
+            Some(id)
+        } else {
+            None
+        };
+
         self.offset.push(rect.origin + info.scroll_offset);
     }
 
