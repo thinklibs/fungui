@@ -120,7 +120,7 @@ pub fn border_image(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Va
         .and_then(|v| v.get_value::<i32>())
         .unwrap_or(pwidth);
 
-    let repeat = params.get(2)
+    let repeat = params.get(3)
         .and_then(|v| v.get_value::<String>())
         .map(|v| match v.as_ref() {
             "stretch" => RepeatMode::Stretch,
