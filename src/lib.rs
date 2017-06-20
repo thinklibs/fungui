@@ -572,6 +572,13 @@ impl <RInfo> Node<RInfo> {
         query::Query::new(self.clone())
     }
 
+    /// Creates a weak reference to this node.
+    pub fn weak(&self) -> WeakNode<RInfo> {
+        WeakNode {
+            inner: Rc::downgrade(&self.inner),
+        }
+    }
+
     /// Creates a node from a string
     pub fn from_str(s: &str) -> Result<Node<RInfo>, syntax::PError> {
         syntax::desc::Document::parse(s)
@@ -637,6 +644,28 @@ impl <RInfo> Node<RInfo> {
                 render_object: Some(RenderObject::default()),
                 dirty: false,
             })),
+        }
+    }
+}
+
+/// A weak reference to a node.
+pub struct WeakNode<RInfo> {
+    inner: Weak<RefCell<NodeInner<RInfo>>>,
+}
+impl <RInfo> WeakNode<RInfo> {
+    /// Tries to upgrade this weak reference into a strong one.
+    ///
+    /// Fails if there isn't any strong references to the node.
+    pub fn upgrade(&self) -> Option<Node<RInfo>> {
+        self.inner.upgrade()
+            .map(|v| Node { inner: v})
+    }
+}
+
+impl <RInfo> Clone for WeakNode<RInfo> {
+    fn clone(&self) -> Self {
+        WeakNode {
+            inner: self.inner.clone(),
         }
     }
 }
