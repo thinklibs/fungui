@@ -23,6 +23,7 @@ pub struct Manager<RInfo> {
     root: Node<RInfo>,
     styles: Styles<RInfo>,
     last_size: (i32, i32),
+    dirty: bool,
 }
 
 impl <RInfo> Manager<RInfo> {
@@ -40,6 +41,7 @@ impl <RInfo> Manager<RInfo> {
                 funcs: HashMap::new(),
             },
             last_size: (0, 0),
+            dirty: true,
         }
     }
 
@@ -72,13 +74,12 @@ impl <RInfo> Manager<RInfo> {
 
     /// Adds the node to the root node of this manager
     pub fn add_node(&mut self, node: Node<RInfo>) {
-        assert!(node.inner.borrow().parent.is_none(), "Node already has a parent");
-        if let NodeValue::Element(ref mut e) = self.root.inner.borrow_mut().value {
-            node.inner.borrow_mut().parent = Some(Rc::downgrade(&self.root.inner));
-            e.children.push(node);
-        } else {
-            panic!("Text cannot have child elements")
-        }
+        self.root.add_child(node);
+    }
+
+    /// Removes the node from the root node of this manager
+    pub fn remove_node(&mut self, node: Node<RInfo>) {
+        self.root.remove_child(node);
     }
 
     /// Starts a query from the root of this manager
@@ -100,15 +101,26 @@ impl <RInfo> Manager<RInfo> {
     }
 
     /// Loads a set of styles from the given string.
+    ///
+    /// If a set of styles with the same name is already loaded
+    /// then this will replace them.
     pub fn load_styles<'a>(&mut self, name: &str, style_rules: &'a str) -> Result<(), syntax::PError<'a>> {
         let styles = syntax::style::Document::parse(style_rules)?;
         self.styles.styles.push((name.into(), styles));
+        self.dirty = true;
         Ok(())
+    }
+
+    /// Removes the set of styles with the given name
+    pub fn remove_styles(&mut self, name: &str) {
+        self.styles.styles.retain(|v| v.0 != name);
+        self.dirty = true;
     }
 
     /// Positions the nodes in this manager.
     pub fn layout(&mut self, width: i32, height: i32) -> bool {
-        let force_dirty = self.last_size != (width, height);
+        let force_dirty = self.last_size != (width, height) || self.dirty;
+        self.dirty = false;
         self.last_size = (width, height);
         self.root.set_property("width", width);
         self.root.set_property("height", height);
@@ -424,6 +436,23 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Removes the passed node as a child from this node.
+    ///
+    /// This panics if the passed node 's parent isn't this node
+    /// or if the node is a text node.
+    pub fn remove_child(&self, node: Node<RInfo>) {
+        assert!(node.inner.borrow()
+            .parent
+            .as_ref()
+            .and_then(|v| v.upgrade())
+            .map_or(false, |v| Rc::ptr_eq(&v, &self.inner)), "Node isn't child to this element");
+        if let NodeValue::Element(ref mut e) = self.inner.borrow_mut().value {
+            e.children.retain(|v| !Rc::ptr_eq(&v.inner, &node.inner));
+        } else {
+            panic!("Text cannot have child elements")
+        }
+    }
+
     /// Returns a vector containing the child nodes of this
     /// node.
     pub fn children(&self) -> Vec<Node<RInfo>> {
@@ -440,6 +469,30 @@ impl <RInfo> Node<RInfo> {
         match inner.value {
             NodeValue::Element(ref e) => Some(e.name.clone()),
             NodeValue::Text(_) => None,
+        }
+    }
+
+    /// Returns whether the passed node points to the same node
+    /// as this one
+    pub fn is_same(&self, other: &Node<RInfo>) -> bool {
+        Rc::ptr_eq(&self.inner, &other.inner)
+    }
+
+    /// Returns the text of the node if it is a text node.
+    pub fn text(&self) -> Option<String> {
+        if let NodeValue::Text(ref t) = self.inner.borrow().value {
+            Some(t.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Sets the text of the node if it is a text node.
+    pub fn set_text<S>(&self, txt: S)
+        where S: Into<String>
+    {
+        if let NodeValue::Text(ref mut t) = self.inner.borrow_mut().value {
+            *t = txt.into();
         }
     }
 
