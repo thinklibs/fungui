@@ -498,6 +498,22 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Returns the parent node of this node.
+    ///
+    /// This panics if the node doesn't have a parent.
+    /// A node only doesn't have a parent before its
+    /// added to another node or if its the root node.
+    pub fn parent(&self) -> Node<RInfo> {
+        let inner = self.inner.borrow();
+        inner.parent
+            .as_ref()
+            .and_then(|v| v.upgrade())
+            .map(|v| Node {
+                inner: v,
+            })
+            .expect("Node hasn't got a parent")
+    }
+
     /// Returns the name of the node if it has one
     pub fn name(&self) -> Option<String> {
         let inner = self.inner.borrow();
