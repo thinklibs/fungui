@@ -6,6 +6,8 @@ pub mod query;
 pub mod error;
 mod rule;
 use rule::*;
+#[macro_use]
+mod macros;
 
 /// The error type used by stylish
 pub type SResult<T> = error::Result<T>;

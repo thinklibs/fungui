@@ -1,3 +1,4 @@
+#[macro_use]
 extern crate stylish;
 extern crate stylish_webrender;
 extern crate sdl2;
@@ -179,11 +180,12 @@ scroll_box {
     }
 }
 "##).unwrap();
-    manager.add_node_str(r##"
-dragable(x=200, y=60) {
-    "Drag me!"
-}
-"##).unwrap();
+    // Macro demo
+    manager.add_node(node!{
+        dragable(x=200, y=60) {
+            @text("Drag me!")
+        }
+    });
     manager.load_styles("base", r##"
 dragable(x=x, y=y) {
     x = x,
