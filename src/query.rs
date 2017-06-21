@@ -98,6 +98,8 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
                     let p_obj = inner.render_object
                         .as_ref()
                         .expect("Location query used without calling `layout`");
+                    rect.x += p_obj.get_value::<f64>("scroll_x").unwrap_or(0.0) as i32;
+                    rect.y += p_obj.get_value::<f64>("scroll_y").unwrap_or(0.0) as i32;
                     if p_obj.get_value::<bool>("clip_overflow").unwrap_or(false) {
                         if rect.x < 0 {
                             rect.width += rect.x;
@@ -108,15 +110,16 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
                             rect.y = 0;
                         }
                         if rect.x + rect.width >= p_obj.draw_rect.width {
-                            rect.width -= p_obj.draw_rect.width - (rect.x + rect.width);
+                            rect.width -=  (rect.x + rect.width) - p_obj.draw_rect.width;
                         }
                         if rect.y + rect.height >= p_obj.draw_rect.height {
-                            rect.height -= p_obj.draw_rect.height - (rect.y + rect.height);
+                            rect.height -= (rect.y + rect.height) - p_obj.draw_rect.height;
                         }
                     }
                     if rect.width <= 0 || rect.height <= 0 {
                         continue 'search;
                     }
+
                     rect.x += p_obj.draw_rect.x;
                     rect.y += p_obj.draw_rect.y;
                     cur = inner.parent.as_ref().and_then(|v| v.upgrade());
