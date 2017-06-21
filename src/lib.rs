@@ -18,6 +18,11 @@ use std::cell::{RefCell, Ref};
 use std::collections::HashMap;
 use std::any::Any;
 
+pub use syntax::{
+    format_parse_error,
+    format_error,
+};
+
 /// Stores loaded nodes and manages the layout.
 pub struct Manager<RInfo> {
     // Has no parent, is the parent for all base nodes
