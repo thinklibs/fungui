@@ -195,6 +195,10 @@ dragable(x=x, y=y) {
     max_width = 200,
     min_width = 16,
     height = 16,
+
+    filters = filters(
+        "hue_rotate", (x / parent_width) * 3.14,
+        "brightness", 1.0 - (y / parent_height)),
 }
 dragable > @text {
     font = "font/FiraSans-Regular",

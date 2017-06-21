@@ -16,6 +16,7 @@ mod shadow;
 use shadow::*;
 mod layout;
 mod border;
+mod filter;
 
 use webrender::*;
 use webrender_traits::*;
@@ -84,6 +85,7 @@ impl <A: Assets + 'static> WebRenderer<A> {
         manager.add_func_raw("bside", border::border_side);
         manager.add_func_raw("border_width", border::border_width);
         manager.add_func_raw("border_image", border::border_image);
+        manager.add_func_raw("filters", filter::filters);
 
         let fonts = Rc::new(RefCell::new(HashMap::new()));
         let assets = Rc::new(assets);
@@ -196,6 +198,7 @@ pub struct Info {
     clip_overflow: bool,
 
     scroll_offset: LayoutVector2D,
+    filters: Vec<FilterOp>,
 }
 
 #[derive(Debug)]
@@ -379,10 +382,29 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                     obj.get_value::<f64>("scroll_x").unwrap_or(0.0) as f32,
                     obj.get_value::<f64>("scroll_y").unwrap_or(0.0) as f32,
                 ),
+
+                filters: obj.get_custom_value::<filter::Filters>("filters")
+                    .map(|v| v.0.clone())
+                    .unwrap_or_default(),
             });
         }
 
         let info = obj.render_info.as_mut().unwrap();
+
+        if !info.filters.is_empty() {
+            self.builder.push_stacking_context(
+                ScrollPolicy::Fixed,
+                LayoutRect::new(
+                    LayoutPoint::zero(),
+                    LayoutSize::zero(),
+                ),
+                None,
+                TransformStyle::Flat,
+                None,
+                MixBlendMode::Normal,
+                info.filters.clone(),
+            );
+        }
 
         if let Some(key) = info.image {
             let clip = self.builder.push_clip_region(&rect, None, None);
@@ -476,6 +498,9 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         let info = obj.render_info.as_mut().unwrap();
         if let Some(_clip_id) = info.clip_id {
             self.builder.pop_clip_id();
+        }
+        if !info.filters.is_empty() {
+            self.builder.pop_stacking_context();
         }
         self.offset.pop();
     }

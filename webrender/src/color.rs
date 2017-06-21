@@ -102,18 +102,21 @@ pub fn rgb(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
         .ok_or_else(|| ErrorKind::MissingParameter("b"))?;
 
     Ok(stylish::Value::Any(Box::new(Color::Solid(ColorF::new(
-        r.get_value::<i32>()
-            .map(|v| v as f32 / 255.0)
-            .or_else(|| r.get_value::<f64>().map(|v| v as f32))
-            .ok_or_else(|| ErrorKind::IncorrectType("r", "float or integer"))?,
-        g.get_value::<i32>()
-            .map(|v| v as f32 / 255.0)
-            .or_else(|| g.get_value::<f64>().map(|v| v as f32))
-            .ok_or_else(|| ErrorKind::IncorrectType("g", "float or integer"))?,
-        b.get_value::<i32>()
-            .map(|v| v as f32 / 255.0)
-            .or_else(|| b.get_value::<f64>().map(|v| v as f32))
-            .ok_or_else(|| ErrorKind::IncorrectType("b", "float or integer"))?,
+        match *r {
+            stylish::Value::Integer(v) => v as f32 / 255.0,
+            stylish::Value::Float(v) => v as f32,
+            _ =>return Err(ErrorKind::IncorrectType("r", "float or integer").into()),
+        },
+        match *g {
+            stylish::Value::Integer(v) => v as f32 / 255.0,
+            stylish::Value::Float(v) => v as f32,
+            _ =>return Err(ErrorKind::IncorrectType("g", "float or integer").into()),
+        },
+        match *b {
+            stylish::Value::Integer(v) => v as f32 / 255.0,
+            stylish::Value::Float(v) => v as f32,
+            _ =>return Err(ErrorKind::IncorrectType("b", "float or integer").into()),
+        },
         1.0
     )))))
 }
@@ -129,22 +132,26 @@ pub fn rgba(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
         .ok_or_else(|| ErrorKind::MissingParameter("a"))?;
 
     Ok(stylish::Value::Any(Box::new(Color::Solid(ColorF::new(
-        r.get_value::<i32>()
-            .map(|v| v as f32 / 255.0)
-            .or_else(|| r.get_value::<f64>().map(|v| v as f32))
-            .ok_or_else(|| ErrorKind::IncorrectType("r", "float or integer"))?,
-        g.get_value::<i32>()
-            .map(|v| v as f32 / 255.0)
-            .or_else(|| g.get_value::<f64>().map(|v| v as f32))
-            .ok_or_else(|| ErrorKind::IncorrectType("g", "float or integer"))?,
-        b.get_value::<i32>()
-            .map(|v| v as f32 / 255.0)
-            .or_else(|| b.get_value::<f64>().map(|v| v as f32))
-            .ok_or_else(|| ErrorKind::IncorrectType("b", "float or integer"))?,
-        a.get_value::<i32>()
-            .map(|v| v as f32 / 255.0)
-            .or_else(|| a.get_value::<f64>().map(|v| v as f32))
-            .ok_or_else(|| ErrorKind::IncorrectType("a", "float or integer"))?,
+        match *r {
+            stylish::Value::Integer(v) => v as f32 / 255.0,
+            stylish::Value::Float(v) => v as f32,
+            _ =>return Err(ErrorKind::IncorrectType("r", "float or integer").into()),
+        },
+        match *g {
+            stylish::Value::Integer(v) => v as f32 / 255.0,
+            stylish::Value::Float(v) => v as f32,
+            _ =>return Err(ErrorKind::IncorrectType("g", "float or integer").into()),
+        },
+        match *b {
+            stylish::Value::Integer(v) => v as f32 / 255.0,
+            stylish::Value::Float(v) => v as f32,
+            _ =>return Err(ErrorKind::IncorrectType("b", "float or integer").into()),
+        },
+        match *a {
+            stylish::Value::Integer(v) => v as f32 / 255.0,
+            stylish::Value::Float(v) => v as f32,
+            _ =>return Err(ErrorKind::IncorrectType("a", "float or integer").into()),
+        },
     )))))
 }
 
