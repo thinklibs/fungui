@@ -295,10 +295,10 @@ top_bar > rust_logo {
 top_bar > @text {
     x = 16 + 56 + 8,
     y = 16,
-    width = 60,
+    width = 200,
     height = 24,
     font = "font/FiraSans-Regular",
-    font_size = 20,
+    font_size = 24,
     font_color = rgb(0, 0, 0),
 }
 
@@ -311,7 +311,7 @@ text_box {
 text_box {
     background_color = rgba(0, 0, 0, 0.3),
     layout = "lined",
-    line_height = 24,
+    line_height = 17,
     auto_size = true,
     shadow = shadow(4.0, 4.0, rgba(0, 0, 0, 0.5), 8.0, 0.0, "outset"),
     clip_overflow = true,
@@ -337,8 +337,8 @@ grid_box > text_box {
 }
 
 text_box > rust_logo {
-    width = 24,
-    height = 24,
+    width = 17,
+    height = 17,
     image = "rust-logo-32",
 }
 

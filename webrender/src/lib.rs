@@ -271,22 +271,22 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                             txt[s..e].chars()
                                 .scan((0.0, None), move |state, v| {
                                     let index = finfo.info.find_glyph_index(v as u32);
-                                    state.0 = if let Some(last) = state.1 {
+                                    let g_size = if let Some(last) = state.1 {
                                         let kern = finfo.info.get_glyph_kern_advance(last, index);
-                                        state.0 + kern as f32 * scale
+                                        kern as f32 * scale
                                     } else {
-                                        state.0
+                                        0.0
                                     };
                                     state.1 = Some(index);
 
-                                    let pos = state.0;
-                                    state.0 += (finfo.info.get_glyph_h_metrics(index).advance_width as f32 * scale).ceil();
+                                    let pos = state.0 + g_size;
+                                    state.0 += g_size + finfo.info.get_glyph_h_metrics(index).advance_width as f32 * scale;
 
                                     Some(GlyphInstance {
                                         index: index,
                                         point: LayoutPoint::new(
                                             rect.x as f32 + offset.x + pos,
-                                            rect.y as f32 + offset.y + size as f32,
+                                            rect.y as f32 + offset.y + size as f32 * 0.8,
                                         ),
                                     })
                                 })
@@ -466,7 +466,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 &txt.glyphs,
                 txt.font,
                 txt.color,
-                app_units::Au::from_px(txt.size),
+                app_units::Au::from_f64_px(txt.size as f64 * 0.8),
                 0.0,
                 None
             );
