@@ -108,6 +108,7 @@ impl <RInfo> Manager<RInfo> {
     /// then this will replace them.
     pub fn load_styles<'a>(&mut self, name: &str, style_rules: &'a str) -> Result<(), syntax::PError<'a>> {
         let styles = syntax::style::Document::parse(style_rules)?;
+        self.remove_styles(name);
         self.styles.styles.push((name.into(), styles));
         self.dirty = true;
         Ok(())
