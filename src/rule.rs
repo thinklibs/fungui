@@ -40,6 +40,8 @@ impl <'a> Rule<'a> {
                 match (l, r) {
                     (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l + r)),
                     (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l + r)),
+                    (Value::Float(l), Value::Integer(r)) => Ok(Value::Float(l + r as f64)),
+                    (Value::Integer(l), Value::Float(r)) => Ok(Value::Float(l as f64 + r)),
                     (Value::String(l), Value::String(r)) => Ok(Value::String(l + &r)),
                     _ => Err(ErrorKind::CantOp(
                         "add".into(),
@@ -53,6 +55,8 @@ impl <'a> Rule<'a> {
                 match (l, r) {
                     (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l - r)),
                     (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l - r)),
+                    (Value::Float(l), Value::Integer(r)) => Ok(Value::Float(l - r as f64)),
+                    (Value::Integer(l), Value::Float(r)) => Ok(Value::Float(l as f64 - r)),
                     _ => Err(ErrorKind::CantOp(
                         "subtract".into(),
                         expr.position,
@@ -65,6 +69,8 @@ impl <'a> Rule<'a> {
                 match (l, r) {
                     (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l * r)),
                     (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l * r)),
+                    (Value::Float(l), Value::Integer(r)) => Ok(Value::Float(l * r as f64)),
+                    (Value::Integer(l), Value::Float(r)) => Ok(Value::Float(l as f64 * r)),
                     _ => Err(ErrorKind::CantOp(
                         "multiply".into(),
                         expr.position,
@@ -76,7 +82,9 @@ impl <'a> Rule<'a> {
                 let r = self.eval(styles, parent_rect, r)?;
                 match (l, r) {
                     (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l / r)),
-                    (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l / r)),
+                    (Value::Integer(l), Value::Integer(r)) => Ok(Value::Float(l as f64 / r as f64)),
+                    (Value::Float(l), Value::Integer(r)) => Ok(Value::Float(l / r as f64)),
+                    (Value::Integer(l), Value::Float(r)) => Ok(Value::Float(l as f64 / r)),
                     _ => Err(ErrorKind::CantOp(
                         "divide".into(),
                         expr.position,

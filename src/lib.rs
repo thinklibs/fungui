@@ -895,6 +895,7 @@ impl PropertyValue for i32 {
     fn convert_from(v: &Value) -> Option<Self> {
         match *v {
             Value::Integer(v) => Some(v),
+            Value::Float(v) => Some(v as i32),
             _ => None,
         }
     }
@@ -907,6 +908,7 @@ impl PropertyValue for i32 {
 impl PropertyValue for f64 {
     fn convert_from(v: &Value) -> Option<Self> {
         match *v {
+            Value::Integer(v) => Some(v as f64),
             Value::Float(v) => Some(v),
             _ => None,
         }
