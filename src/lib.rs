@@ -567,6 +567,13 @@ impl <RInfo> Node<RInfo> {
         inner.properties.get(key).and_then(|v| V::convert_from(&v))
     }
 
+    /// Gets the custom value from the proprety for this node
+    pub fn get_custom_property<V: Clone + CustomValue + 'static>(&self, name: &str) -> Option<V> {
+        let inner = self.inner.borrow();
+        inner.properties.get(name)
+            .and_then(|v| V::convert_from(v))
+    }
+
     /// Sets the value of the property on the node.
     pub fn set_property<V: PropertyValue>(&self, key: &str, value: V) {
         let mut inner = self.inner.borrow_mut();
