@@ -88,16 +88,21 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
 
             if let Some(loc) = self.location {
                 let inner = node.inner.borrow();
-                let mut rect = inner.render_object
+                let mut rect = match inner.render_object
                     .as_ref()
-                    .expect("Location query used without calling `layout`")
-                    .draw_rect;
+                {
+                    Some(v) => v.draw_rect,
+                    None => continue,
+                };
                 let mut cur = inner.parent.as_ref().and_then(|v| v.upgrade());
                 while let Some(p) = cur {
                     let inner = p.borrow();
-                    let p_obj = inner.render_object
+                    let p_obj = match inner.render_object
                         .as_ref()
-                        .expect("Location query used without calling `layout`");
+                    {
+                        Some(v) => v,
+                        None => continue 'search,
+                    };
                     rect.x += p_obj.get_value::<f64>("scroll_x").unwrap_or(0.0) as i32;
                     rect.y += p_obj.get_value::<f64>("scroll_y").unwrap_or(0.0) as i32;
                     if p_obj.get_value::<bool>("clip_overflow").unwrap_or(false) {
