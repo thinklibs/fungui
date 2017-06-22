@@ -439,22 +439,13 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
             }
         }
 
-        for shadow in &info.shadows {
-            let clip = self.builder.push_clip_region(
-                &rect.inflate(shadow.blur_radius, shadow.blur_radius)
-                    .translate(&shadow.offset),
-                None, None
-            );
-            self.builder.push_box_shadow(
+        if let Some(border) = info.border {
+            let clip = self.builder.push_clip_region(&rect, None, None);
+            self.builder.push_border(
                 rect,
                 clip,
-                rect,
-                shadow.offset,
-                shadow.color,
-                shadow.blur_radius,
-                shadow.spread_radius,
-                0.0,
-                shadow.clip_mode,
+                info.border_widths,
+                border,
             );
         }
 
@@ -472,13 +463,22 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
             );
         }
 
-        if let Some(border) = info.border {
-            let clip = self.builder.push_clip_region(&rect, None, None);
-            self.builder.push_border(
+        for shadow in &info.shadows {
+            let clip = self.builder.push_clip_region(
+                &rect.inflate(shadow.blur_radius, shadow.blur_radius)
+                    .translate(&shadow.offset),
+                None, None
+            );
+            self.builder.push_box_shadow(
                 rect,
                 clip,
-                info.border_widths,
-                border,
+                rect,
+                shadow.offset,
+                shadow.color,
+                shadow.blur_radius,
+                shadow.spread_radius,
+                0.0,
+                shadow.clip_mode,
             );
         }
 
