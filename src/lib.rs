@@ -574,6 +574,13 @@ impl <RInfo> Node<RInfo> {
         inner.properties.insert(key.into(), value.convert_into());
     }
 
+    /// Removes the property on the node.
+    pub fn remove_property(&self, key: &str) {
+        let mut inner = self.inner.borrow_mut();
+        inner.dirty = true;
+        inner.properties.remove(key);
+    }
+
     /// Gets the value from the style rules for this node
     pub fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
         let inner = self.inner.borrow();
