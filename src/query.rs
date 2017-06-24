@@ -20,7 +20,9 @@ pub(crate) enum Rule {
     /// Matches against the element's name
     Name(String),
     /// Matches against a property
-    Property(String, Value)
+    Property(String, Value),
+    /// Matches against a text node
+    Text,
 }
 
 impl <RInfo> Query<RInfo> {
@@ -36,6 +38,12 @@ impl <RInfo> Query<RInfo> {
         where S: Into<String>
     {
         self.rules.push(Rule::Name(name.into()));
+        self
+    }
+
+    pub fn text(mut self) -> Query<RInfo>
+    {
+        self.rules.push(Rule::Text);
         self
     }
 
@@ -150,6 +158,11 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
             let mut cur = node.clone();
             for rule in self.rules.iter().rev() {
                 match *rule {
+                    Rule::Text => {
+                        if let NodeValue::Element(_) = cur.inner.borrow().value {
+                            continue 'search;
+                        }
+                    }
                     Rule::Name(ref n) => {
                         if !cur.name().map_or(false, |v| *v == *n) {
                             continue 'search;
