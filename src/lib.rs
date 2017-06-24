@@ -551,8 +551,10 @@ impl <RInfo> Node<RInfo> {
     pub fn set_text<S>(&self, txt: S)
         where S: Into<String>
     {
-        if let NodeValue::Text(ref mut t) = self.inner.borrow_mut().value {
+        let mut inner: &mut NodeInner<_> = &mut *self.inner.borrow_mut();
+        if let NodeValue::Text(ref mut t) = inner.value {
             *t = txt.into();
+            inner.dirty = true;
         }
     }
 
