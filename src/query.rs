@@ -13,7 +13,7 @@ pub(crate) struct AtLocation {
     pub(crate) y: i32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum Rule {
     /// Matches against child nodes
     Child,
@@ -78,6 +78,16 @@ pub struct QueryIterator<RInfo> {
     nodes: Vec<Node<RInfo>>,
     rules: Vec<Rule>,
     location: Option<AtLocation>,
+}
+
+impl <RInfo> Clone for QueryIterator<RInfo> {
+    fn clone(&self) -> Self {
+        QueryIterator {
+            nodes: Clone::clone(&self.nodes),
+            rules: Clone::clone(&self.rules),
+            location: self.location,
+        }
+    }
 }
 
 impl <RInfo> Iterator for QueryIterator<RInfo> {
