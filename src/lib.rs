@@ -87,6 +87,7 @@ impl <RInfo> Manager<RInfo> {
     /// Removes the node from the root node of this manager
     pub fn remove_node(&mut self, node: Node<RInfo>) {
         self.root.remove_child(node);
+        self.dirty = true;
     }
 
     /// Starts a query from the root of this manager
@@ -487,8 +488,10 @@ impl <RInfo> Node<RInfo> {
             .as_ref()
             .and_then(|v| v.upgrade())
             .map_or(false, |v| Rc::ptr_eq(&v, &self.inner)), "Node isn't child to this element");
-        if let NodeValue::Element(ref mut e) = self.inner.borrow_mut().value {
+        let mut inner: &mut NodeInner<_> = &mut * self.inner.borrow_mut();
+        if let NodeValue::Element(ref mut e) = inner.value {
             e.children.retain(|v| !Rc::ptr_eq(&v.inner, &node.inner));
+            inner.dirty = true;
         } else {
             panic!("Text cannot have child elements")
         }
