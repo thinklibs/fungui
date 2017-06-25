@@ -566,6 +566,56 @@ impl <RInfo> Node<RInfo> {
         Ref::map(inner, |v| v.render_object.as_ref().unwrap())
     }
 
+    /// Returns the rendering position of the node.
+    ///
+    /// Useful for IME handling.
+    /// Must be called after a `layout` call.
+    pub fn render_position(&self) -> Option<Rect> {
+        let inner = self.inner.borrow();
+        let mut rect = match inner.render_object
+            .as_ref()
+        {
+            Some(v) => v.draw_rect,
+            None => return None,
+        };
+        let mut cur = inner.parent.as_ref().and_then(|v| v.upgrade());
+        while let Some(p) = cur {
+            let inner = p.borrow();
+            let p_obj = match inner.render_object
+                .as_ref()
+            {
+                Some(v) => v,
+                None => return None,
+            };
+            rect.x += p_obj.get_value::<f64>("scroll_x").unwrap_or(0.0) as i32;
+            rect.y += p_obj.get_value::<f64>("scroll_y").unwrap_or(0.0) as i32;
+            if p_obj.get_value::<bool>("clip_overflow").unwrap_or(false) {
+                if rect.x < 0 {
+                    rect.width += rect.x;
+                    rect.x = 0;
+                }
+                if rect.y < 0 {
+                    rect.height += rect.y;
+                    rect.y = 0;
+                }
+                if rect.x + rect.width >= p_obj.draw_rect.width {
+                    rect.width -=  (rect.x + rect.width) - p_obj.draw_rect.width;
+                }
+                if rect.y + rect.height >= p_obj.draw_rect.height {
+                    rect.height -= (rect.y + rect.height) - p_obj.draw_rect.height;
+                }
+            }
+            if rect.width <= 0 || rect.height <= 0 {
+                return None;
+            }
+
+            rect.x += p_obj.draw_rect.x;
+            rect.y += p_obj.draw_rect.y;
+            cur = inner.parent.as_ref().and_then(|v| v.upgrade());
+        }
+        Some(rect)
+    }
+
     /// Returns the value of the property if it has it set
     pub fn get_property<V: PropertyValue>(&self, key: &str) -> Option<V> {
         let inner = self.inner.borrow();
