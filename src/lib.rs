@@ -626,7 +626,11 @@ impl <RInfo> Node<RInfo> {
     pub fn get_custom_property<V: Clone + CustomValue + 'static>(&self, name: &str) -> Option<V> {
         let inner = self.inner.borrow();
         inner.properties.get(name)
-            .and_then(|v| V::convert_from(v))
+            .and_then(|v| if let Value::Any(ref v) = *v {
+                (**v).as_any().downcast_ref::<V>().cloned()
+            } else {
+                None
+            })
     }
 
     /// Sets the value of the property on the node.
