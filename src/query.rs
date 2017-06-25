@@ -103,6 +103,9 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
     fn next(&mut self) -> Option<Node<RInfo>> {
         'search:
         while let Some(node) = self.nodes.pop() {
+            if node.inner.borrow().render_object.is_none() {
+                continue;
+            }
 
             if let Some(loc) = self.location {
                 let rect = match node.render_position() {
