@@ -647,6 +647,13 @@ impl <RInfo> Node<RInfo> {
         inner.properties.remove(key);
     }
 
+    /// Returns whether the object has had its layout computed at
+    /// least once.
+    pub fn has_layout(&self) -> bool {
+        let inner = self.inner.borrow();
+        inner.render_object.is_some()
+    }
+
     /// Gets the value from the style rules for this node
     pub fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
         let inner = self.inner.borrow();
