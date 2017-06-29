@@ -62,12 +62,12 @@ impl <RInfo> Query<RInfo> {
 
     fn collect_nodes(out: &mut Vec<Node<RInfo>>, node: &Node<RInfo>) {
         let inner = node.inner.borrow();
+        out.push(node.clone());
         if let NodeValue::Element(ref e) = inner.value {
             for c in e.children.iter() {
                 Self::collect_nodes(out, c);
             }
         }
-        out.push(node.clone());
     }
 
     pub fn matches(self) -> QueryIterator<RInfo> {
