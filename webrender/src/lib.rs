@@ -321,10 +321,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                                     height: img.height,
                                     stride: None,
                                     offset: 0,
-                                    is_opaque: match img.components {
-                                        Components::RGB => true,
-                                        Components::BGRA => false,
-                                    },
+                                    is_opaque: img.is_opaque,
                                 },
                                 ImageData::new(img.data),
                                 None

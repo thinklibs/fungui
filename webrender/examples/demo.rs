@@ -55,6 +55,7 @@ impl stylish_webrender::Assets for TestLoader {
                         }
                         data
                     },
+                    is_opaque: false,
                 })
             },
             _ => {
@@ -64,6 +65,7 @@ impl stylish_webrender::Assets for TestLoader {
                     height: img.height(),
                     components: stylish_webrender::Components::RGB,
                     data: img.into_raw(),
+                    is_opaque: true,
                 })
             },
         }
