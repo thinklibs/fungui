@@ -463,6 +463,20 @@ impl <RInfo> Node<RInfo> {
             }))
         }
     }
+    /// Adds the passed node as a child to this node
+    /// before other child nodes.
+    ///
+    /// This panics if the passed node already has a parent
+    /// or if the node is a text node.
+    pub fn add_child_first(&self, node: Node<RInfo>) {
+        assert!(node.inner.borrow().parent.is_none(), "Node already has a parent");
+        if let NodeValue::Element(ref mut e) = self.inner.borrow_mut().value {
+            node.inner.borrow_mut().parent = Some(Rc::downgrade(&self.inner));
+            e.children.insert(0, node);
+        } else {
+            panic!("Text cannot have child elements")
+        }
+    }
 
     /// Adds the passed node as a child to this node.
     ///
