@@ -390,7 +390,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
         if !info.filters.is_empty() {
             self.builder.push_stacking_context(
-                ScrollPolicy::Fixed,
+                ScrollPolicy::Scrollable,
                 LayoutRect::new(
                     LayoutPoint::zero(),
                     LayoutSize::zero(),
