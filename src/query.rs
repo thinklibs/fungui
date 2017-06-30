@@ -80,6 +80,10 @@ impl <RInfo> Query<RInfo> {
             location: self.location,
         }
     }
+
+    pub fn next(self) -> Option<Node<RInfo>> {
+        self.matches().next()
+    }
 }
 
 pub struct QueryIterator<RInfo> {

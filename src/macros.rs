@@ -5,7 +5,7 @@
 /// The syntax matches the node description format apart from
 /// a few differences.
 ///
-/// * Text can't be inline, it must be wrapped with `@test("hello")`
+/// * Text can't be inline, it must be wrapped with `@text("hello")`
 /// * String attributes currently need to be `.to_owned()` as
 ///   it expects `String` not `&str`.
 ///
@@ -148,4 +148,113 @@ macro_rules! node {
     ($name:ident) => ({
         $crate::Node::new(stringify!($name))
     });
+}
+
+/// Allows for the creation of queries in a similar format
+/// as style rules.
+///
+/// The syntax matches the node style format apart from
+/// a few differences.
+///
+/// * Text can't be inline, it must be wrapped with `@text("hello")`
+/// * String attributes currently need to be `.to_owned()` as
+///   it expects `String` not `&str`.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[macro_use] extern crate stylish;
+/// # use stylish::Node;
+/// # fn main() {
+/// # let node : Node<()> =
+/// # node!{
+/// #     panel(x=5, y=16, width=300, height=50) {
+/// #         icon
+/// #         title {
+/// #             @text("Testing")
+/// #         }
+/// #     }
+/// # };
+/// assert_eq!(
+///     query!(node, panel(width=300) > title > @text)
+///         .next().and_then(|v| v.text()),
+///     Some("Testing".to_owned())
+/// );
+/// # }
+/// ```
+#[macro_export]
+macro_rules! query {
+
+    (@target($query:expr), ) => (
+        $query
+    );
+
+    (@target($query:expr), @text (
+        $($key:ident = $val:expr),*
+    ) > $($other:tt)*) => (
+        query!(@target($query.text()
+        $(
+            .property(stringify!($key), $val)
+        )*.child()), $($other)*)
+    );
+    (@target($query:expr), @text > $($other:tt)*) => (
+        query!(@target($query.text().child()), $($other)*)
+    );
+    (@target($query:expr), @text (
+        $($key:ident = $val:expr),*
+    )) => (
+        $query.text()
+        $(
+            .property(stringify!($key), $val)
+        )*
+    );
+    (@target($query:expr), @text) => (
+        $query.text()
+    );
+
+    (@target($query:expr), $name:ident (
+        $($key:ident = $val:expr),*
+    ) > $($other:tt)*) => (
+        query!(@target($query.name(stringify!($name))
+        $(
+            .property(stringify!($key), $val)
+        )*.child()), $($other)*)
+    );
+    (@target($query:expr), $name:ident > $($other:tt)*) => (
+        query!(@target($query.name(stringify!($name)).child()), $($other)*)
+    );
+    (@target($query:expr), $name:ident (
+        $($key:ident = $val:expr),*
+    )) => (
+        $query.name(stringify!($name))
+        $(
+            .property(stringify!($key), $val)
+        )*
+    );
+    (@target($query:expr), $name:ident) => (
+        $query.name(stringify!($name))
+    );
+
+    ($node:expr, $($other:tt)*) => ({
+        let query = $node.query();
+        query!(@target(query), $($other)*)
+    });
+}
+
+#[test]
+fn test_query_macro() {
+    let node: super::Node<()> = node!{
+        test {
+            inner {
+                @text("wrong".to_owned())
+            }
+            inner(a=5) {
+                @text("hello".to_owned())
+            }
+        }
+    };
+    assert_eq!(
+        query!(node, test > inner(a=5) > @text).next().and_then(|v| v.text()),
+        Some("hello".to_owned())
+    )
 }
