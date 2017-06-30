@@ -654,6 +654,13 @@ impl <RInfo> Node<RInfo> {
         inner.properties.insert(key.into(), value.convert_into());
     }
 
+    /// Sets the value of the property on the node without
+    /// flagging it as dirty
+    pub fn raw_set_property<V: PropertyValue>(&self, key: &str, value: V) {
+        let mut inner = self.inner.borrow_mut();
+        inner.properties.insert(key.into(), value.convert_into());
+    }
+
     /// Removes the property on the node.
     pub fn remove_property(&self, key: &str) {
         let mut inner = self.inner.borrow_mut();
