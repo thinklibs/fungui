@@ -64,13 +64,13 @@ impl Document {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Rule {
     pub matchers: Vec<(Matcher, HashMap<Ident, ValueType>)>,
     pub styles: HashMap<Ident, ExprType>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Matcher {
     Element(Element),
     Text,
@@ -82,7 +82,7 @@ pub enum Matcher {
 /// An element does nothing by itself (bar special elements
 /// as defined by the program, widgets) and must be controlled
 /// via a style document.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Element {
     /// The name of this element
     pub name: Ident,
@@ -90,7 +90,7 @@ pub struct Element {
 
 /// Contains a value and debugging information
 /// for the value.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ValueType {
     /// The parsed value
     pub value: Value,
@@ -101,7 +101,7 @@ pub struct ValueType {
 }
 
 /// A parsed value for a property
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     /// A boolean value
     Boolean(bool),
@@ -115,7 +115,7 @@ pub enum Value {
     Variable(Ident),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExprType {
     /// The parsed value
     pub expr: Expr,
@@ -125,7 +125,7 @@ pub struct ExprType {
     pub position: Position,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Value(Value),
     Neg(Box<ExprType>),

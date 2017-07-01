@@ -46,6 +46,7 @@ impl <RInfo> Manager<RInfo> {
                     layouts
                 },
                 funcs: HashMap::new(),
+                rules_by_base: HashMap::new(),
             },
             last_size: (0, 0),
             dirty: true,
@@ -114,9 +115,10 @@ impl <RInfo> Manager<RInfo> {
     /// then this will replace them.
     pub fn load_styles<'a>(&mut self, name: &str, style_rules: &'a str) -> Result<(), syntax::PError<'a>> {
         let styles = syntax::style::Document::parse(style_rules)?;
-        self.remove_styles(name);
+        self.styles.styles.retain(|v| v.0 != name);
         self.styles.styles.push((name.into(), styles));
         self.dirty = true;
+        self.rebuild_styles();
         Ok(())
     }
 
@@ -124,6 +126,24 @@ impl <RInfo> Manager<RInfo> {
     pub fn remove_styles(&mut self, name: &str) {
         self.styles.styles.retain(|v| v.0 != name);
         self.dirty = true;
+        self.rebuild_styles();
+    }
+
+    fn rebuild_styles(&mut self) {
+        self.styles.rules_by_base.clear();
+        for doc in &self.styles.styles {
+            for rule in &doc.1.rules {
+                let m = if let Some(m) = rule.matchers.last() {
+                    match m.0 {
+                        syntax::style::Matcher::Element(ref e) => Matcher::Element(e.name.name.clone()),
+                        syntax::style::Matcher::Text => Matcher::Text,
+                    }
+                } else {
+                    continue;
+                };
+                self.styles.rules_by_base.entry(m).or_insert_with(Vec::new).push(rule.clone());
+            }
+        }
     }
 
     /// Positions the nodes in this manager.
@@ -273,22 +293,32 @@ pub trait RenderVisitor<RInfo> {
     fn visit_end(&mut self, _obj: &mut RenderObject<RInfo>) {}
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+enum Matcher {
+    Element(String),
+    Text,
+}
+
 struct Styles<RInfo> {
     styles: Vec<(String, syntax::style::Document)>,
     layouts: HashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>>,
     funcs: HashMap<String, Box<Fn(Vec<Value>) -> SResult<Value>>>,
+
+    rules_by_base: HashMap<Matcher, Vec<syntax::style::Rule>>,
 }
 
 impl <RInfo> Styles<RInfo> {
     // TODO: Remove boxing
     fn find_matching_rules<'a, 'b>(&'a self, node: &'b Node<RInfo>) -> RuleIter<'b, Box<Iterator<Item=&'a syntax::style::Rule> +'a>, RInfo> {
-        let iter = self.styles.iter()
-            .map(|v| &v.1)
-            .flat_map(|v| &v.rules)
-            .rev();
+        use std::iter;
+        let iter = self.rules_by_base
+            .get(&node.name().map(Matcher::Element).unwrap_or(Matcher::Text))
+            .map(|v| v.iter().rev())
+            .map(|v| Box::new(v) as Box<_>)
+            .unwrap_or_else(|| Box::new(iter::empty()) as Box<_>);
         RuleIter {
             node: node,
-            rules: Box::new(iter) as _,
+            rules: iter,
         }
     }
 }

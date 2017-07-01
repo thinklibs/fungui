@@ -17,7 +17,7 @@ pub type PError<'a> = ParseError<State<&'a str>>;
 ///
 /// An identifier is made up of either letters, numbers
 /// or `_`.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Ident {
     /// The identifier's value/name
     pub name: String,
