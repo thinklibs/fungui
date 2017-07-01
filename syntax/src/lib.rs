@@ -1,5 +1,6 @@
 
 extern crate combine;
+extern crate fnv;
 
 pub mod desc;
 pub mod style;

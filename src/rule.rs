@@ -9,7 +9,7 @@ pub struct RuleIter<'a, I, RInfo: 'a> {
 #[derive(Debug)]
 pub struct Rule<'a> {
     pub(crate) syn: &'a syntax::style::Rule,
-    pub(crate) vars: HashMap<String, Value>,
+    pub(crate) vars: FnvHashMap<String, Value>,
 }
 
 impl <'a> Rule<'a> {
@@ -147,7 +147,7 @@ impl <'a, 'b, I, RInfo> Iterator for RuleIter<'b, I, RInfo>
         'search:
         while let Some(rule) = self.rules.next() {
             let mut current = Some(self.node.clone());
-            let mut vars: HashMap<String, Value> = HashMap::new();
+            let mut vars: FnvHashMap<String, Value> = FnvHashMap::default();
             for m in rule.matchers.iter().rev() {
                 if let Some(cur) = current.take() {
                     let cur = cur.inner.borrow();

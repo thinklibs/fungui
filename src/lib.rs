@@ -1,6 +1,7 @@
 extern crate stylish_syntax as syntax;
 #[macro_use]
 extern crate error_chain;
+extern crate fnv;
 
 pub mod query;
 pub mod error;
@@ -9,13 +10,14 @@ use rule::*;
 #[macro_use]
 mod macros;
 
+use fnv::FnvHashMap;
+
 /// The error type used by stylish
 pub type SResult<T> = error::Result<T>;
 use error::ErrorKind;
 
 use std::rc::{Rc, Weak};
 use std::cell::{RefCell, Ref};
-use std::collections::HashMap;
 use std::any::Any;
 
 pub use syntax::{
@@ -41,12 +43,12 @@ impl <RInfo> Manager<RInfo> {
             styles: Styles {
                 styles: Vec::new(),
                 layouts: {
-                    let mut layouts: HashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>> = HashMap::new();
+                    let mut layouts: FnvHashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>> = FnvHashMap::default();
                     layouts.insert("absolute".to_owned(), Box::new(|_| Box::new(AbsoluteLayout)));
                     layouts
                 },
-                funcs: HashMap::new(),
-                rules_by_base: HashMap::new(),
+                funcs: FnvHashMap::default(),
+                rules_by_base: FnvHashMap::default(),
             },
             last_size: (0, 0),
             dirty: true,
@@ -301,10 +303,10 @@ enum Matcher {
 
 struct Styles<RInfo> {
     styles: Vec<(String, syntax::style::Document)>,
-    layouts: HashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>>,
-    funcs: HashMap<String, Box<Fn(Vec<Value>) -> SResult<Value>>>,
+    layouts: FnvHashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>>,
+    funcs: FnvHashMap<String, Box<Fn(Vec<Value>) -> SResult<Value>>>,
 
-    rules_by_base: HashMap<Matcher, Vec<syntax::style::Rule>>,
+    rules_by_base: FnvHashMap<Matcher, Vec<syntax::style::Rule>>,
 }
 
 impl <RInfo> Styles<RInfo> {
@@ -472,7 +474,7 @@ impl <RInfo> Node<RInfo> {
                     name: name.into(),
                     children: Vec::new(),
                 }),
-                properties: HashMap::new(),
+                properties: FnvHashMap::default(),
                 render_object: None,
                 dirty: true,
             }))
@@ -487,7 +489,7 @@ impl <RInfo> Node<RInfo> {
             inner: Rc::new(RefCell::new(NodeInner {
                 parent: None,
                 value: NodeValue::Text(text.into()),
-                properties: HashMap::new(),
+                properties: FnvHashMap::default(),
                 render_object: None,
                 dirty: true,
             }))
@@ -743,7 +745,7 @@ impl <RInfo> Node<RInfo> {
         Node::from_doc_element(desc.root)
     }
 
-    fn from_doc_text(desc: String, properties: HashMap<syntax::Ident, syntax::desc::ValueType>) -> Node<RInfo> {
+    fn from_doc_text(desc: String, properties: FnvHashMap<syntax::Ident, syntax::desc::ValueType>) -> Node<RInfo> {
         Node {
             inner: Rc::new(RefCell::new(NodeInner {
                 parent: None,
@@ -793,7 +795,7 @@ impl <RInfo> Node<RInfo> {
                     name: "root".into(),
                     children: Vec::new(),
                 }),
-                properties: HashMap::default(),
+                properties: FnvHashMap::default(),
                 render_object: Some(RenderObject::default()),
                 dirty: false,
             })),
@@ -825,7 +827,7 @@ impl <RInfo> Clone for WeakNode<RInfo> {
 
 struct NodeInner<RInfo> {
     parent: Option<Weak<RefCell<NodeInner<RInfo>>>>,
-    properties: HashMap<String, Value>,
+    properties: FnvHashMap<String, Value>,
     value: NodeValue<RInfo>,
     render_object: Option<RenderObject<RInfo>>,
     dirty: bool,
@@ -918,7 +920,7 @@ pub struct RenderObject<RInfo> {
     /// None for no limit
     pub max_size: (Option<i32>, Option<i32>),
     layout_engine: RefCell<Box<LayoutEngine<RInfo>>>,
-    vars: HashMap<String, Value>,
+    vars: FnvHashMap<String, Value>,
     /// Renderer storage
     pub render_info: Option<RInfo>,
     /// The text of this element if it is text.
@@ -954,7 +956,7 @@ impl <RInfo> Default for RenderObject<RInfo> {
             min_size: (0, 0),
             max_size: (None, None),
             layout_engine: RefCell::new(Box::new(AbsoluteLayout)),
-            vars: HashMap::new(),
+            vars: FnvHashMap::default(),
             render_info: Default::default(),
             text: None,
             text_splits: Vec::new(),

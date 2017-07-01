@@ -22,10 +22,11 @@
 //! }
 //! ```
 
+use fnv::FnvHashMap;
+
 use combine::*;
 use combine::char::{char, digit, alpha_num, spaces, string, space};
 use combine::primitives::{Error, SourcePosition};
-use std::collections::HashMap;
 use std::fmt::Debug;
 use super::{
     Ident,
@@ -66,8 +67,8 @@ impl Document {
 
 #[derive(Debug, Clone)]
 pub struct Rule {
-    pub matchers: Vec<(Matcher, HashMap<Ident, ValueType>)>,
-    pub styles: HashMap<Ident, ExprType>,
+    pub matchers: Vec<(Matcher, FnvHashMap<Ident, ValueType>)>,
+    pub styles: FnvHashMap<Ident, ExprType>,
 }
 
 #[derive(Debug, Clone)]
@@ -211,7 +212,7 @@ fn ident<I>(input: I) -> ParseResult<Ident, I>
         .parse_stream(input)
 }
 
-fn styles<I>(input: I) -> ParseResult<HashMap<Ident, ExprType>, I>
+fn styles<I>(input: I) -> ParseResult<FnvHashMap<Ident, ExprType>, I>
     where I: Stream<Item=char, Position=SourcePosition>,
           I: Debug,
           I::Range: Debug
@@ -219,7 +220,7 @@ fn styles<I>(input: I) -> ParseResult<HashMap<Ident, ExprType>, I>
 
     let (_, mut input) = try!(char('{').parse_lazy(input).into());
 
-    let mut styles = HashMap::new();
+    let mut styles = FnvHashMap::default();
     loop {
         match input.clone().combine(|input| spaces().with(char('}')).parse_lazy(input).into()) {
             Ok(i) => {
@@ -406,7 +407,7 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
     Ok((v, input))
 }
 
-fn properties<I>(input: I) -> ParseResult<HashMap<Ident, ValueType>, I>
+fn properties<I>(input: I) -> ParseResult<FnvHashMap<Ident, ValueType>, I>
     where I: Stream<Item=char, Position=SourcePosition>
 {
     let properties = (
