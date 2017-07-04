@@ -278,10 +278,10 @@ fn style_property<I>(input: I) -> ParseResult<(Ident, ExprType), I>
 
 fn op_prio(c: char) -> u8 {
     match c {
-        '-' => 11,
-        '+' => 10,
-        '/' => 5,
-        '*' => 4,
+        '-' => 4,
+        '+' => 5,
+        '/' => 8,
+        '*' => 7,
         _ => 255,
     }
 }
@@ -291,25 +291,18 @@ fn expr<I>(input: I) -> ParseResult<ExprType, I>
           I: Debug,
           I::Range: Debug
 {
-    expr_inner(input, 255)
+    let (v, input) = parser(expr_value).parse_stream(input)?;
+    input.combine(|input| expr_inner(input, v, 255))
 }
 
-fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
+fn expr_value<I>(input: I) -> ParseResult<ExprType, I>
     where I: Stream<Item=char, Position=SourcePosition>,
           I: Debug,
           I::Range: Debug
 {
-
     let (neg, mut input) = try!(
         optional((position(), token('-')))
             .parse_lazy(input).into()
-    );
-
-    let op_ex = choice!(
-        token('+'),
-        token('*'),
-        token('-'),
-        token('/')
     );
 
     let (bracket, i) = try!(input.combine(|input|
@@ -319,8 +312,9 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
     input = i;
 
     let v = if bracket.is_some() {
-        let (v, i) = try!(input.combine(|input| {
-            (parser(|input| expr_inner(input, 255)), token(')'))
+        let (val, i) = input.combine(|input| parser(expr_value).parse_stream(input))?;
+        let (v, i) = try!(i.combine(move |input| {
+            (parser(move |input| expr_inner(input, val.clone(), 255)), token(')'))
                 .map(|v| v.0)
                 .parse_lazy(input).into()
         }));
@@ -360,7 +354,7 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
             }
         }
     };
-    let mut v = if let Some((pos, _)) = neg {
+    let v = if let Some((pos, _)) = neg {
         ExprType {
             expr: Expr::Neg(Box::new(v)),
             position: pos.into(),
@@ -368,9 +362,25 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
     } else {
         v
     };
+    Ok((v, input))
+}
+
+fn expr_inner<I>(input: I, mut v: ExprType, mut max: u8) -> ParseResult<ExprType, I>
+    where I: Stream<Item=char, Position=SourcePosition>,
+          I: Debug,
+          I::Range: Debug
+{
+    let op_ex_o = choice!(
+        token('+'),
+        token('*'),
+        token('-'),
+        token('/')
+    );
+
+    let (_, mut input) = spaces().parse_stream(input)?;
 
     loop {
-        let op_ex = op_ex.clone();
+        let op_ex = op_ex_o.clone();
         let (op, i) = try!(input.combine(|input|
             look_ahead(optional(spaces()
                 .with(op_ex.clone())))
@@ -382,14 +392,33 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
             if p > max {
                 break;
             }
+            max = p;
             let ((pos, op), i) = try!(input.combine(|input| spaces().with((position(), op_ex)).parse_lazy(input).into()));
             input = i;
-            let (right, i) = try!(input.combine(|input| spaces()
-                .with(parser(|i| expr_inner(i, p)))
+            let (mut right, i) = try!(input.combine(|input| spaces()
+                .with(parser(expr_value))
                 .parse_lazy(input)
                 .into()
             ));
             input = i;
+
+            let op_ex = op_ex_o.clone();
+            let (next_op, i) = try!(input.combine(|input|
+                look_ahead(optional(spaces()
+                    .with(op_ex.clone())))
+                .parse_lazy(input).into()
+            ));
+            input = i;
+            let p = next_op.map(|op| op_prio(op));
+            let should_break = if p.map_or(false, |p| p > max) {
+                let (nv, i) = input.combine(|input| {
+                    parser(move |input| expr_inner(input, right.clone(), p.unwrap())).parse_stream(input)
+                })?;
+                input = i;
+                right = nv;
+                true
+            } else { false };
+
             v = ExprType {
                 expr: match op {
                     '+' => Expr::Add(Box::new(v), Box::new(right)),
@@ -400,6 +429,9 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
                 },
                 position: pos.into(),
             };
+            if should_break {
+                break;
+            }
         } else {
             break;
         }
