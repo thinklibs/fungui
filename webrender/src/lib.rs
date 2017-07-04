@@ -4,6 +4,7 @@ extern crate gleam;
 extern crate stylish;
 extern crate app_units;
 extern crate stb_truetype;
+extern crate euclid;
 
 mod assets;
 pub use assets::*;
@@ -13,6 +14,8 @@ use color::*;
 mod shadow;
 use shadow::*;
 mod layout;
+mod border;
+mod filter;
 
 use webrender::*;
 use webrender_api::*;
@@ -47,6 +50,8 @@ pub struct WebRenderer<A> {
 
     images: HashMap<String, ImageKey>,
     fonts: FontMap,
+
+    skip_build: bool,
 }
 
 type FontMap = Rc<RefCell<HashMap<String, Font>>>;
@@ -75,6 +80,11 @@ impl <A: Assets + 'static> WebRenderer<A> {
         manager.add_func_raw("deg", math::deg);
         manager.add_func_raw("shadow", shadow);
         manager.add_func_raw("shadows", shadows);
+        manager.add_func_raw("border", border::border);
+        manager.add_func_raw("bside", border::border_side);
+        manager.add_func_raw("border_width", border::border_width);
+        manager.add_func_raw("border_image", border::border_image);
+        manager.add_func_raw("filters", filter::filters);
 
         let fonts = Rc::new(RefCell::new(HashMap::new()));
         let assets = Rc::new(assets);
@@ -116,7 +126,16 @@ impl <A: Assets + 'static> WebRenderer<A> {
 
             images: HashMap::new(),
             fonts: fonts,
+            skip_build: false,
         })
+    }
+
+    pub fn layout(&mut self, manager: &mut stylish::Manager<Info>, width: u32, height: u32) {
+        if manager.layout(width as i32, height as i32) {
+            self.skip_build = false;
+        } else {
+            self.skip_build = true;
+        }
     }
 
     pub fn render(&mut self, manager: &mut stylish::Manager<Info>, width: u32, height: u32) {
@@ -126,43 +145,40 @@ impl <A: Assets + 'static> WebRenderer<A> {
         let size = DeviceUintSize::new(width, height);
         let dsize = LayoutSize::new(width as f32, height as f32);
 
-        let mut builder = DisplayListBuilder::new(
-            pipeline,
-            dsize
-        );
+        if !self.skip_build {
+            let mut builder = DisplayListBuilder::new(
+                pipeline,
+                dsize
+            );
 
-        let clip = LayoutRect::new(
-            LayoutPoint::new(0.0, 0.0),
-            dsize,
-        );
+            manager.render(&mut WebBuilder {
+                api: &self.api,
+                builder: &mut builder,
+                assets: self.assets.clone(),
+                images: &mut self.images,
+                fonts: self.fonts.clone(),
+                offset: Vec::with_capacity(16),
+            });
 
-        manager.render(&mut WebBuilder {
-            api: &self.api,
-            builder: &mut builder,
-            assets: self.assets.clone(),
-            images: &mut self.images,
-            fonts: self.fonts.clone(),
-            clip_rect: clip,
-            offset: Vec::with_capacity(16),
-        });
-
-        self.api.set_window_parameters(
-            size,
-            DeviceUintRect::new(
-                DeviceUintPoint::zero(),
+            self.api.set_window_parameters(
                 size,
-            )
-        );
-        self.api.set_display_list(
-            None,
-            self.frame_id,
-            dsize,
-            builder.finalize(),
-            false,
-        );
-        self.api.generate_frame(None);
+                DeviceUintRect::new(
+                    DeviceUintPoint::zero(),
+                    size,
+                )
+            );
+            self.api.set_display_list(
+                None,
+                self.frame_id,
+                dsize,
+                builder.finalize(),
+                false,
+            );
+            self.api.generate_frame(None);
+        }
 
         self.renderer.render(size);
+        self.skip_build = false;
     }
 }
 
@@ -173,6 +189,15 @@ pub struct Info {
     shadows: Vec<Shadow>,
 
     text: Option<Text>,
+
+    border_widths: BorderWidths,
+    border: Option<BorderDetails>,
+
+    clip_id: Option<ClipId>,
+    clip_overflow: bool,
+
+    scroll_offset: LayoutVector2D,
+    filters: Vec<FilterOp>,
 }
 
 #[derive(Debug)]
@@ -191,7 +216,6 @@ struct WebBuilder<'a, A: 'a> {
     images: &'a mut HashMap<String, ImageKey>,
     fonts: FontMap,
 
-    clip_rect: LayoutRect,
     offset: Vec<LayoutPoint>,
 }
 
@@ -246,22 +270,22 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                             txt[s..e].chars()
                                 .scan((0.0, None), move |state, v| {
                                     let index = finfo.info.find_glyph_index(v as u32);
-                                    state.0 = if let Some(last) = state.1 {
+                                    let g_size = if let Some(last) = state.1 {
                                         let kern = finfo.info.get_glyph_kern_advance(last, index);
-                                        state.0 + kern as f32 * scale
+                                        kern as f32 * scale
                                     } else {
-                                        state.0
+                                        0.0
                                     };
                                     state.1 = Some(index);
 
-                                    let pos = state.0;
-                                    state.0 += (finfo.info.get_glyph_h_metrics(index).advance_width as f32 * scale).ceil();
+                                    let pos = state.0 + g_size;
+                                    state.0 += g_size + finfo.info.get_glyph_h_metrics(index).advance_width as f32 * scale;
 
                                     Some(GlyphInstance {
                                         index: index,
                                         point: LayoutPoint::new(
                                             rect.x as f32 + offset.x + pos,
-                                            rect.y as f32 + offset.y + size as f32,
+                                            rect.y as f32 + offset.y + size as f32 * 0.8,
                                         ),
                                     })
                                 })
@@ -280,39 +304,38 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 None
             };
 
+            let mut load_image = |v| match self.images.entry(v) {
+                    Entry::Occupied(v) => Some(*v.get()),
+                    Entry::Vacant(v) => {
+                        if let Some(img) = self.assets.load_image(v.key()) {
+                            let key = self.api.generate_image_key();
+                            self.api.add_image(
+                                key,
+                                ImageDescriptor {
+                                    format: match img.components {
+                                        Components::RGB => ImageFormat::RGB8,
+                                        Components::BGRA => ImageFormat::BGRA8,
+                                    },
+                                    width: img.width,
+                                    height: img.height,
+                                    stride: None,
+                                    offset: 0,
+                                    is_opaque: img.is_opaque,
+                                },
+                                ImageData::new(img.data),
+                                None
+                            );
+                            Some(*v.insert(key))
+                        } else {
+                            None
+                        }
+                    },
+                };
+
             obj.render_info = Some(Info {
                 background_color: Color::get(obj, "background_color"),
                 image: obj.get_value::<String>("image")
-                    .and_then(|v| match self.images.entry(v) {
-                        Entry::Occupied(v) => Some(*v.get()),
-                        Entry::Vacant(v) => {
-                            if let Some(img) = self.assets.load_image(v.key()) {
-                                let key = self.api.generate_image_key();
-                                self.api.add_image(
-                                    key,
-                                    ImageDescriptor {
-                                        format: match img.components {
-                                            Components::RGB => ImageFormat::RGB8,
-                                            Components::RGBA => ImageFormat::BGRA8,
-                                        },
-                                        width: img.width,
-                                        height: img.height,
-                                        stride: None,
-                                        offset: 0,
-                                        is_opaque: match img.components {
-                                            Components::RGB => true,
-                                            Components::RGBA => false,
-                                        },
-                                    },
-                                    ImageData::new(img.data),
-                                    None
-                                );
-                                Some(*v.insert(key))
-                            } else {
-                                None
-                            }
-                        },
-                    }),
+                    .and_then(|v| load_image(v)),
                 shadows: obj.get_custom_value::<Shadow>("shadow")
                     .cloned()
                     .map(|v| vec![v])
@@ -320,19 +343,74 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         .cloned())
                     .unwrap_or_else(Vec::new),
                 text: text,
+
+                border_widths: obj.get_custom_value::<border::BorderWidthInfo>("border_width")
+                    .map(|v| v.widths)
+                    .unwrap_or(BorderWidths {
+                        left: 0.0,
+                        top: 0.0,
+                        right: 0.0,
+                        bottom: 0.0,
+                    }),
+                border: obj.get_custom_value::<border::Border>("border")
+                    .map(|v| match *v {
+                        border::Border::Normal{left, top, right, bottom} => BorderDetails::Normal(NormalBorder {
+                            left: left,
+                            top: top,
+                            right: right,
+                            bottom: bottom,
+
+                            radius: BorderRadius::uniform(obj.get_value::<f64>("border_radius").unwrap_or(0.0) as f32),
+                        }),
+                        border::Border::Image{ref image, patch, repeat, fill} => BorderDetails::Image(ImageBorder {
+                            image_key: load_image(image.clone()).unwrap(),
+                            patch: patch,
+                            fill: fill,
+                            outset: euclid::SideOffsets2D::new(0.0, 0.0, 0.0, 0.0),
+                            repeat_horizontal: repeat,
+                            repeat_vertical: repeat,
+                        }),
+                    }),
+
+                clip_id: None,
+                clip_overflow: obj.get_value::<bool>("clip_overflow").unwrap_or(false),
+                scroll_offset: LayoutVector2D::new(
+                    obj.get_value::<f64>("scroll_x").unwrap_or(0.0) as f32,
+                    obj.get_value::<f64>("scroll_y").unwrap_or(0.0) as f32,
+                ),
+
+                filters: obj.get_custom_value::<filter::Filters>("filters")
+                    .map(|v| v.0.clone())
+                    .unwrap_or_default(),
             });
         }
 
-        let info = obj.render_info.as_ref().unwrap();
+        let info = obj.render_info.as_mut().unwrap();
+
+        if !info.filters.is_empty() {
+            self.builder.push_stacking_context(
+                ScrollPolicy::Scrollable,
+                LayoutRect::new(
+                    LayoutPoint::zero(),
+                    LayoutSize::zero(),
+                ),
+                None,
+                TransformStyle::Flat,
+                None,
+                MixBlendMode::Normal,
+                info.filters.clone(),
+            );
+        }
 
         if let Some(key) = info.image {
-            self.builder.push_image(rect, self.clip_rect, rect.size, LayoutSize::zero(), ImageRendering::Auto, key);
+            self.builder.push_image(rect, rect, rect.size, LayoutSize::zero(), ImageRendering::Auto, key);
+
         }
 
         if let Some(col) = info.background_color.as_ref() {
             match *col {
                 Color::Solid(col) => {
-                    self.builder.push_rect(rect, self.clip_rect, col);
+                    self.builder.push_rect(rect, rect, col);
                 },
                 Color::Gradient{angle, ref stops} => {
                     let len = width.max(height) / 2.0;
@@ -346,7 +424,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         ExtendMode::Clamp,
                     );
                     self.builder.push_gradient(
-                        rect, self.clip_rect,
+                        rect, rect,
                         g,
                         LayoutSize::new(width, height),
                         LayoutSize::zero(),
@@ -355,10 +433,37 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
             }
         }
 
+        if let Some(border) = info.border {
+            self.builder.push_border(
+                rect,
+                rect,
+                info.border_widths,
+                border,
+            );
+        }
+
+        if let Some(txt) = info.text.as_ref() {
+            self.builder.push_text(
+                rect,
+                rect,
+                &txt.glyphs,
+                txt.font,
+                txt.color,
+                app_units::Au::from_f64_px(txt.size as f64 * 0.8),
+                0.0,
+                None
+            );
+        }
+
         for shadow in &info.shadows {
+            let clip = self.builder.push_clip_region(
+                &rect.inflate(shadow.blur_radius, shadow.blur_radius)
+                    .translate(&shadow.offset),
+                None, None
+            );
             self.builder.push_box_shadow(
                 rect,
-                self.clip_rect,
+                clip,
                 rect,
                 shadow.offset,
                 shadow.color,
@@ -369,23 +474,26 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
             );
         }
 
-        if let Some(txt) = info.text.as_ref() {
-            self.builder.push_text(
-                rect,
-                self.clip_rect,
-                &txt.glyphs,
-                txt.font,
-                txt.color,
-                app_units::Au::from_px(txt.size),
-                0.0,
-                None
-            );
-        }
+        info.clip_id = if info.clip_overflow {
+            let clip = self.builder.push_clip_region(&rect, None, None);
+            let id = self.builder.define_clip(rect, clip, None);
+            self.builder.push_clip_id(id);
+            Some(id)
+        } else {
+            None
+        };
 
-        self.offset.push(rect.origin);
+        self.offset.push(rect.origin + info.scroll_offset);
     }
 
-    fn visit_end(&mut self, _obj: &mut stylish::RenderObject<Info>) {
+    fn visit_end(&mut self, obj: &mut stylish::RenderObject<Info>) {
+        let info = obj.render_info.as_mut().unwrap();
+        if let Some(_clip_id) = info.clip_id {
+            self.builder.pop_clip_id();
+        }
+        if !info.filters.is_empty() {
+            self.builder.pop_stacking_context();
+        }
         self.offset.pop();
     }
 }

@@ -5,3 +5,4 @@ authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
 
 [dependencies]
 combine = "2.3.2"
+fnv = "1.0.5"

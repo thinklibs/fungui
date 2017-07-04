@@ -1,20 +1,29 @@
 extern crate stylish_syntax as syntax;
 #[macro_use]
 extern crate error_chain;
+extern crate fnv;
 
 pub mod query;
 pub mod error;
 mod rule;
 use rule::*;
+#[macro_use]
+mod macros;
+
+use fnv::FnvHashMap;
 
 /// The error type used by stylish
 pub type SResult<T> = error::Result<T>;
 use error::ErrorKind;
 
 use std::rc::{Rc, Weak};
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::cell::{RefCell, Ref};
 use std::any::Any;
+
+pub use syntax::{
+    format_parse_error,
+    format_error,
+};
 
 /// Stores loaded nodes and manages the layout.
 pub struct Manager<RInfo> {
@@ -23,6 +32,7 @@ pub struct Manager<RInfo> {
     root: Node<RInfo>,
     styles: Styles<RInfo>,
     last_size: (i32, i32),
+    dirty: bool,
 }
 
 impl <RInfo> Manager<RInfo> {
@@ -33,13 +43,15 @@ impl <RInfo> Manager<RInfo> {
             styles: Styles {
                 styles: Vec::new(),
                 layouts: {
-                    let mut layouts: HashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>> = HashMap::new();
+                    let mut layouts: FnvHashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>> = FnvHashMap::default();
                     layouts.insert("absolute".to_owned(), Box::new(|_| Box::new(AbsoluteLayout)));
                     layouts
                 },
-                funcs: HashMap::new(),
+                funcs: FnvHashMap::default(),
+                rules_by_base: FnvHashMap::default(),
             },
             last_size: (0, 0),
+            dirty: true,
         }
     }
 
@@ -72,13 +84,13 @@ impl <RInfo> Manager<RInfo> {
 
     /// Adds the node to the root node of this manager
     pub fn add_node(&mut self, node: Node<RInfo>) {
-        assert!(node.inner.borrow().parent.is_none(), "Node already has a parent");
-        if let NodeValue::Element(ref mut e) = self.root.inner.borrow_mut().value {
-            node.inner.borrow_mut().parent = Some(Rc::downgrade(&self.root.inner));
-            e.children.push(node);
-        } else {
-            panic!("Text cannot have child elements")
-        }
+        self.root.add_child(node);
+    }
+
+    /// Removes the node from the root node of this manager
+    pub fn remove_node(&mut self, node: Node<RInfo>) {
+        self.root.remove_child(node);
+        self.dirty = true;
     }
 
     /// Starts a query from the root of this manager
@@ -100,33 +112,80 @@ impl <RInfo> Manager<RInfo> {
     }
 
     /// Loads a set of styles from the given string.
+    ///
+    /// If a set of styles with the same name is already loaded
+    /// then this will replace them.
     pub fn load_styles<'a>(&mut self, name: &str, style_rules: &'a str) -> Result<(), syntax::PError<'a>> {
         let styles = syntax::style::Document::parse(style_rules)?;
+        self.styles.styles.retain(|v| v.0 != name);
         self.styles.styles.push((name.into(), styles));
+        self.dirty = true;
+        self.rebuild_styles();
         Ok(())
     }
 
+    /// Removes the set of styles with the given name
+    pub fn remove_styles(&mut self, name: &str) {
+        self.styles.styles.retain(|v| v.0 != name);
+        self.dirty = true;
+        self.rebuild_styles();
+    }
+
+    fn rebuild_styles(&mut self) {
+        self.styles.rules_by_base.clear();
+        for doc in &self.styles.styles {
+            for rule in &doc.1.rules {
+                let m = if let Some(m) = rule.matchers.last() {
+                    match m.0 {
+                        syntax::style::Matcher::Element(ref e) => Matcher::Element(e.name.name.clone()),
+                        syntax::style::Matcher::Text => Matcher::Text,
+                    }
+                } else {
+                    continue;
+                };
+                self.styles.rules_by_base.entry(m).or_insert_with(Vec::new).push(rule.clone());
+            }
+        }
+    }
+
     /// Positions the nodes in this manager.
-    pub fn layout(&mut self, width: i32, height: i32) {
-        let dirty = self.last_size != (width, height);
+    pub fn layout(&mut self, width: i32, height: i32) -> bool {
+        let force_dirty = self.last_size != (width, height) || self.dirty;
+        self.dirty = false;
         self.last_size = (width, height);
         self.root.set_property("width", width);
         self.root.set_property("height", height);
         {
-            // TODO: Hack
             let mut inner = self.root.inner.borrow_mut();
-            inner.render_object = Some(RenderObject::default());
+            inner.render_object = Some(RenderObject {
+                draw_rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: width,
+                    height: height,
+                },
+                .. RenderObject::default()
+            });
         }
         let inner = self.root.inner.borrow();
         if let NodeValue::Element(ref e) = inner.value {
+            let mut dirty = force_dirty;
             for c in &e.children {
                 if c.check_dirty() {
+                    dirty = true;
                     c.inner.borrow_mut().render_object = None;
                 }
             }
-            for c in &e.children {
-                c.layout(&self.styles, &mut AbsoluteLayout,  dirty);
+            if dirty {
+                for c in &e.children {
+                    c.layout(&self.styles, &mut AbsoluteLayout,  force_dirty);
+                }
+                true
+            } else {
+                false
             }
+        } else {
+            false
         }
     }
 
@@ -236,22 +295,32 @@ pub trait RenderVisitor<RInfo> {
     fn visit_end(&mut self, _obj: &mut RenderObject<RInfo>) {}
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+enum Matcher {
+    Element(String),
+    Text,
+}
+
 struct Styles<RInfo> {
     styles: Vec<(String, syntax::style::Document)>,
-    layouts: HashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>>,
-    funcs: HashMap<String, Box<Fn(Vec<Value>) -> SResult<Value>>>,
+    layouts: FnvHashMap<String, Box<Fn(&RenderObject<RInfo>) -> Box<LayoutEngine<RInfo>>>>,
+    funcs: FnvHashMap<String, Box<Fn(Vec<Value>) -> SResult<Value>>>,
+
+    rules_by_base: FnvHashMap<Matcher, Vec<syntax::style::Rule>>,
 }
 
 impl <RInfo> Styles<RInfo> {
     // TODO: Remove boxing
     fn find_matching_rules<'a, 'b>(&'a self, node: &'b Node<RInfo>) -> RuleIter<'b, Box<Iterator<Item=&'a syntax::style::Rule> +'a>, RInfo> {
-        let iter = self.styles.iter()
-            .map(|v| &v.1)
-            .flat_map(|v| &v.rules)
-            .rev();
+        use std::iter;
+        let iter = self.rules_by_base
+            .get(&node.name().map(Matcher::Element).unwrap_or(Matcher::Text))
+            .map(|v| v.iter().rev())
+            .map(|v| Box::new(v) as Box<_>)
+            .unwrap_or_else(|| Box::new(iter::empty()) as Box<_>);
         RuleIter {
             node: node,
-            rules: Box::new(iter) as _,
+            rules: iter,
         }
     }
 }
@@ -304,11 +373,17 @@ impl <RInfo> Node<RInfo> {
             if missing_obj || force_dirty {
                 dirty = true;
                 let mut obj = RenderObject::default();
+                let parent_rect = if let Some(parent) = self.inner.borrow().parent.as_ref().and_then(|v| v.upgrade()) {
+                    let parent = parent.borrow();
+                    parent.render_object.as_ref().unwrap().draw_rect
+                } else {
+                    Rect{x: 0, y: 0, width: 0, height: 0}
+                };
                 for rule in styles.find_matching_rules(self) {
                     for key in rule.syn.styles.keys() {
                         let key = &key.name;
                         if let Entry::Vacant(e) = obj.vars.entry(key.clone()) {
-                            if let Some(v) = rule.get_value(styles, key) {
+                            if let Some(v) = rule.get_value(styles, parent_rect, key) {
                                 e.insert(v);
                             }
                         }
@@ -388,6 +463,53 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Creates a new element with the given name.
+    pub fn new<S>(name: S) -> Node<RInfo>
+        where S: Into<String>
+    {
+        Node {
+            inner: Rc::new(RefCell::new(NodeInner {
+                parent: None,
+                value: NodeValue::Element(Element {
+                    name: name.into(),
+                    children: Vec::new(),
+                }),
+                properties: FnvHashMap::default(),
+                render_object: None,
+                dirty: true,
+            }))
+        }
+    }
+
+    /// Creates a new text node with the given text.
+    pub fn new_text<S>(text: S) -> Node<RInfo>
+        where S: Into<String>
+    {
+        Node {
+            inner: Rc::new(RefCell::new(NodeInner {
+                parent: None,
+                value: NodeValue::Text(text.into()),
+                properties: FnvHashMap::default(),
+                render_object: None,
+                dirty: true,
+            }))
+        }
+    }
+    /// Adds the passed node as a child to this node
+    /// before other child nodes.
+    ///
+    /// This panics if the passed node already has a parent
+    /// or if the node is a text node.
+    pub fn add_child_first(&self, node: Node<RInfo>) {
+        assert!(node.inner.borrow().parent.is_none(), "Node already has a parent");
+        if let NodeValue::Element(ref mut e) = self.inner.borrow_mut().value {
+            node.inner.borrow_mut().parent = Some(Rc::downgrade(&self.inner));
+            e.children.insert(0, node);
+        } else {
+            panic!("Text cannot have child elements")
+        }
+    }
+
     /// Adds the passed node as a child to this node.
     ///
     /// This panics if the passed node already has a parent
@@ -402,6 +524,51 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Removes the passed node as a child from this node.
+    ///
+    /// This panics if the passed node 's parent isn't this node
+    /// or if the node is a text node.
+    pub fn remove_child(&self, node: Node<RInfo>) {
+        assert!(node.inner.borrow()
+            .parent
+            .as_ref()
+            .and_then(|v| v.upgrade())
+            .map_or(false, |v| Rc::ptr_eq(&v, &self.inner)), "Node isn't child to this element");
+        let mut inner: &mut NodeInner<_> = &mut * self.inner.borrow_mut();
+        if let NodeValue::Element(ref mut e) = inner.value {
+            e.children.retain(|v| !Rc::ptr_eq(&v.inner, &node.inner));
+            inner.dirty = true;
+        } else {
+            panic!("Text cannot have child elements")
+        }
+    }
+
+    /// Returns a vector containing the child nodes of this
+    /// node.
+    pub fn children(&self) -> Vec<Node<RInfo>> {
+        if let NodeValue::Element(ref e) = self.inner.borrow().value {
+            Clone::clone(&e.children)
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Returns the parent node of this node.
+    ///
+    /// This panics if the node doesn't have a parent.
+    /// A node only doesn't have a parent before its
+    /// added to another node or if its the root node.
+    pub fn parent(&self) -> Node<RInfo> {
+        let inner = self.inner.borrow();
+        inner.parent
+            .as_ref()
+            .and_then(|v| v.upgrade())
+            .map(|v| Node {
+                inner: v,
+            })
+            .expect("Node hasn't got a parent")
+    }
+
     /// Returns the name of the node if it has one
     pub fn name(&self) -> Option<String> {
         let inner = self.inner.borrow();
@@ -411,10 +578,105 @@ impl <RInfo> Node<RInfo> {
         }
     }
 
+    /// Returns whether the passed node points to the same node
+    /// as this one
+    pub fn is_same(&self, other: &Node<RInfo>) -> bool {
+        Rc::ptr_eq(&self.inner, &other.inner)
+    }
+
+    /// Returns the text of the node if it is a text node.
+    pub fn text(&self) -> Option<String> {
+        if let NodeValue::Text(ref t) = self.inner.borrow().value {
+            Some(t.clone())
+        } else {
+            None
+        }
+    }
+
+    /// Sets the text of the node if it is a text node.
+    pub fn set_text<S>(&self, txt: S)
+        where S: Into<String>
+    {
+        let mut inner: &mut NodeInner<_> = &mut *self.inner.borrow_mut();
+        if let NodeValue::Text(ref mut t) = inner.value {
+            *t = txt.into();
+            inner.dirty = true;
+        }
+    }
+
+    /// Returns the `RenderObject` for this node.
+    ///
+    /// Must be called after a `layout` call
+    pub fn render_object(&self) -> Ref<RenderObject<RInfo>> {
+        let inner = self.inner.borrow();
+        Ref::map(inner, |v| v.render_object.as_ref().unwrap())
+    }
+
+    /// Returns the rendering position of the node.
+    ///
+    /// Useful for IME handling.
+    /// Must be called after a `layout` call.
+    pub fn render_position(&self) -> Option<Rect> {
+        let inner = self.inner.borrow();
+        let mut rect = match inner.render_object
+            .as_ref()
+        {
+            Some(v) => v.draw_rect,
+            None => return None,
+        };
+        let mut cur = inner.parent.as_ref().and_then(|v| v.upgrade());
+        while let Some(p) = cur {
+            let inner = p.borrow();
+            let p_obj = match inner.render_object
+                .as_ref()
+            {
+                Some(v) => v,
+                None => return None,
+            };
+            rect.x += p_obj.get_value::<f64>("scroll_x").unwrap_or(0.0) as i32;
+            rect.y += p_obj.get_value::<f64>("scroll_y").unwrap_or(0.0) as i32;
+            if p_obj.get_value::<bool>("clip_overflow").unwrap_or(false) {
+                if rect.x < 0 {
+                    rect.width += rect.x;
+                    rect.x = 0;
+                }
+                if rect.y < 0 {
+                    rect.height += rect.y;
+                    rect.y = 0;
+                }
+                if rect.x + rect.width >= p_obj.draw_rect.width {
+                    rect.width -=  (rect.x + rect.width) - p_obj.draw_rect.width;
+                }
+                if rect.y + rect.height >= p_obj.draw_rect.height {
+                    rect.height -= (rect.y + rect.height) - p_obj.draw_rect.height;
+                }
+            }
+            if rect.width <= 0 || rect.height <= 0 {
+                return None;
+            }
+
+            rect.x += p_obj.draw_rect.x;
+            rect.y += p_obj.draw_rect.y;
+            cur = inner.parent.as_ref().and_then(|v| v.upgrade());
+        }
+        Some(rect)
+    }
+
     /// Returns the value of the property if it has it set
     pub fn get_property<V: PropertyValue>(&self, key: &str) -> Option<V> {
         let inner = self.inner.borrow();
         inner.properties.get(key).and_then(|v| V::convert_from(&v))
+    }
+
+    /// Gets the custom value from the proprety for this node
+    pub fn get_custom_property<V: Clone + CustomValue + 'static>(&self, name: &str) -> Option<V> {
+        let inner = self.inner.borrow();
+        inner.properties.get(name)
+            .and_then(|v| if let Value::Any(ref v) = *v {
+                (**v).as_any().downcast_ref::<V>().cloned()
+            } else {
+                None
+            })
     }
 
     /// Sets the value of the property on the node.
@@ -424,9 +686,52 @@ impl <RInfo> Node<RInfo> {
         inner.properties.insert(key.into(), value.convert_into());
     }
 
+    /// Sets the value of the property on the node without
+    /// flagging it as dirty
+    pub fn raw_set_property<V: PropertyValue>(&self, key: &str, value: V) {
+        let mut inner = self.inner.borrow_mut();
+        inner.properties.insert(key.into(), value.convert_into());
+    }
+
+    /// Removes the property on the node.
+    pub fn remove_property(&self, key: &str) {
+        let mut inner = self.inner.borrow_mut();
+        inner.dirty = true;
+        inner.properties.remove(key);
+    }
+
+    /// Returns whether the object has had its layout computed at
+    /// least once.
+    pub fn has_layout(&self) -> bool {
+        let inner = self.inner.borrow();
+        inner.render_object.is_some()
+    }
+
+    /// Gets the value from the style rules for this node
+    pub fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
+        let inner = self.inner.borrow();
+        inner.render_object.as_ref()
+            .and_then(|v| v.get_value(name))
+    }
+
+    /// Gets the custom value from the style rules for this node
+    pub fn get_custom_value<V: Clone + CustomValue + 'static>(&self, name: &str) -> Option<V> {
+        let inner = self.inner.borrow();
+        inner.render_object.as_ref()
+            .and_then(|v| v.get_custom_value(name))
+            .map(|v| Clone::clone(v))
+    }
+
     /// Begins a query on this node
     pub fn query(&self) -> query::Query<RInfo> {
         query::Query::new(self.clone())
+    }
+
+    /// Creates a weak reference to this node.
+    pub fn weak(&self) -> WeakNode<RInfo> {
+        WeakNode {
+            inner: Rc::downgrade(&self.inner),
+        }
     }
 
     /// Creates a node from a string
@@ -440,7 +745,7 @@ impl <RInfo> Node<RInfo> {
         Node::from_doc_element(desc.root)
     }
 
-    fn from_doc_text(desc: String, properties: HashMap<syntax::Ident, syntax::desc::ValueType>) -> Node<RInfo> {
+    fn from_doc_text(desc: String, properties: FnvHashMap<syntax::Ident, syntax::desc::ValueType>) -> Node<RInfo> {
         Node {
             inner: Rc::new(RefCell::new(NodeInner {
                 parent: None,
@@ -490,7 +795,7 @@ impl <RInfo> Node<RInfo> {
                     name: "root".into(),
                     children: Vec::new(),
                 }),
-                properties: HashMap::default(),
+                properties: FnvHashMap::default(),
                 render_object: Some(RenderObject::default()),
                 dirty: false,
             })),
@@ -498,9 +803,31 @@ impl <RInfo> Node<RInfo> {
     }
 }
 
+/// A weak reference to a node.
+pub struct WeakNode<RInfo> {
+    inner: Weak<RefCell<NodeInner<RInfo>>>,
+}
+impl <RInfo> WeakNode<RInfo> {
+    /// Tries to upgrade this weak reference into a strong one.
+    ///
+    /// Fails if there isn't any strong references to the node.
+    pub fn upgrade(&self) -> Option<Node<RInfo>> {
+        self.inner.upgrade()
+            .map(|v| Node { inner: v})
+    }
+}
+
+impl <RInfo> Clone for WeakNode<RInfo> {
+    fn clone(&self) -> Self {
+        WeakNode {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
 struct NodeInner<RInfo> {
     parent: Option<Weak<RefCell<NodeInner<RInfo>>>>,
-    properties: HashMap<String, Value>,
+    properties: FnvHashMap<String, Value>,
     value: NodeValue<RInfo>,
     render_object: Option<RenderObject<RInfo>>,
     dirty: bool,
@@ -593,7 +920,7 @@ pub struct RenderObject<RInfo> {
     /// None for no limit
     pub max_size: (Option<i32>, Option<i32>),
     layout_engine: RefCell<Box<LayoutEngine<RInfo>>>,
-    vars: HashMap<String, Value>,
+    vars: FnvHashMap<String, Value>,
     /// Renderer storage
     pub render_info: Option<RInfo>,
     /// The text of this element if it is text.
@@ -629,7 +956,7 @@ impl <RInfo> Default for RenderObject<RInfo> {
             min_size: (0, 0),
             max_size: (None, None),
             layout_engine: RefCell::new(Box::new(AbsoluteLayout)),
-            vars: HashMap::new(),
+            vars: FnvHashMap::default(),
             render_info: Default::default(),
             text: None,
             text_splits: Vec::new(),
@@ -707,6 +1034,7 @@ impl PropertyValue for i32 {
     fn convert_from(v: &Value) -> Option<Self> {
         match *v {
             Value::Integer(v) => Some(v),
+            Value::Float(v) => Some(v as i32),
             _ => None,
         }
     }
@@ -719,6 +1047,7 @@ impl PropertyValue for i32 {
 impl PropertyValue for f64 {
     fn convert_from(v: &Value) -> Option<Self> {
         match *v {
+            Value::Integer(v) => Some(v as f64),
             Value::Float(v) => Some(v),
             _ => None,
         }

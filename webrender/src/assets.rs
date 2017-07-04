@@ -9,10 +9,11 @@ pub struct Image {
     pub height: u32,
     pub components: Components,
     pub data: Vec<u8>,
+    pub is_opaque: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum Components {
     RGB,
-    RGBA,
+    BGRA,
 }

@@ -8,6 +8,7 @@ stylish = { path = "../" }
 gleam = "0.4.3"
 app_units = "0.5"
 stb_truetype = "0.2.1"
+euclid = "0.15"
 
 [dev-dependencies]
 sdl2 = "0.30.0"

@@ -13,14 +13,16 @@ pub(crate) struct AtLocation {
     pub(crate) y: i32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum Rule {
     /// Matches against child nodes
     Child,
     /// Matches against the element's name
     Name(String),
     /// Matches against a property
-    Property(String, Value)
+    Property(String, Value),
+    /// Matches against a text node
+    Text,
 }
 
 impl <RInfo> Query<RInfo> {
@@ -39,6 +41,12 @@ impl <RInfo> Query<RInfo> {
         self
     }
 
+    pub fn text(mut self) -> Query<RInfo>
+    {
+        self.rules.push(Rule::Text);
+        self
+    }
+
     pub fn property<S, V>(mut self, key: S, val: V) -> Query<RInfo>
         where V: PropertyValue,
               S: Into<String>
@@ -54,12 +62,12 @@ impl <RInfo> Query<RInfo> {
 
     fn collect_nodes(out: &mut Vec<Node<RInfo>>, node: &Node<RInfo>) {
         let inner = node.inner.borrow();
+        out.push(node.clone());
         if let NodeValue::Element(ref e) = inner.value {
-            for c in e.children.iter().rev() {
+            for c in e.children.iter() {
                 Self::collect_nodes(out, c);
             }
         }
-        out.push(node.clone());
     }
 
     pub fn matches(self) -> QueryIterator<RInfo> {
@@ -72,12 +80,26 @@ impl <RInfo> Query<RInfo> {
             location: self.location,
         }
     }
+
+    pub fn next(self) -> Option<Node<RInfo>> {
+        self.matches().next()
+    }
 }
 
 pub struct QueryIterator<RInfo> {
     nodes: Vec<Node<RInfo>>,
     rules: Vec<Rule>,
     location: Option<AtLocation>,
+}
+
+impl <RInfo> Clone for QueryIterator<RInfo> {
+    fn clone(&self) -> Self {
+        QueryIterator {
+            nodes: Clone::clone(&self.nodes),
+            rules: Clone::clone(&self.rules),
+            location: self.location,
+        }
+    }
 }
 
 impl <RInfo> Iterator for QueryIterator<RInfo> {
@@ -87,21 +109,10 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
         while let Some(node) = self.nodes.pop() {
 
             if let Some(loc) = self.location {
-                let inner = node.inner.borrow();
-                let mut rect = inner.render_object
-                    .as_ref()
-                    .expect("Location query used without calling `layout`")
-                    .draw_rect;
-                let mut cur = inner.parent.as_ref().and_then(|v| v.upgrade());
-                while let Some(p) = cur {
-                    let inner = p.borrow();
-                    let p_rect = inner.render_object
-                        .as_ref()
-                        .expect("Location query used without calling `layout`");
-                    rect.x += p_rect.draw_rect.x;
-                    rect.y += p_rect.draw_rect.y;
-                    cur = inner.parent.as_ref().and_then(|v| v.upgrade());
-                }
+                let rect = match node.render_position() {
+                    Some(v) => v,
+                    None => continue,
+                };
 
                 if loc.x < rect.x || loc.x >= rect.x + rect.width
                     || loc.y < rect.y || loc.y >= rect.y + rect.height
@@ -113,6 +124,11 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
             let mut cur = node.clone();
             for rule in self.rules.iter().rev() {
                 match *rule {
+                    Rule::Text => {
+                        if let NodeValue::Element(_) = cur.inner.borrow().value {
+                            continue 'search;
+                        }
+                    }
                     Rule::Name(ref n) => {
                         if !cur.name().map_or(false, |v| *v == *n) {
                             continue 'search;

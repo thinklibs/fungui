@@ -29,10 +29,11 @@
 //! }
 //! ```
 
+use fnv::FnvHashMap;
+
 use combine::*;
 use combine::char::{char, digit, alpha_num, spaces, string, space};
 use combine::primitives::{Error, SourcePosition};
-use std::collections::HashMap;
 use super::{
     Ident,
     Position,
@@ -83,7 +84,7 @@ pub struct Element {
     /// The name of this element
     pub name: Ident,
     /// Optional map of propreties
-    pub properties: HashMap<Ident, ValueType>,
+    pub properties: FnvHashMap<Ident, ValueType>,
     /// Optional list of nodes within this element
     pub nodes: Vec<Node>,
 }
@@ -99,7 +100,7 @@ pub enum Node {
     ///
     /// Position is the position of the text within
     /// the source (used for debugging)
-    Text(String, Position, HashMap<Ident, ValueType>),
+    Text(String, Position, FnvHashMap<Ident, ValueType>),
 }
 
 /// Contains a value and debugging information
@@ -213,7 +214,7 @@ fn body<I>(input: I) -> ParseResult<Vec<Node>, I>
     Ok((nodes, input))
 }
 
-fn properties<I>(input: I) -> ParseResult<HashMap<Ident, ValueType>, I>
+fn properties<I>(input: I) -> ParseResult<FnvHashMap<Ident, ValueType>, I>
     where I: Stream<Item=char, Position=SourcePosition>
 {
     let properties = (

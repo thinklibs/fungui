@@ -1,5 +1,6 @@
 
 extern crate combine;
+extern crate fnv;
 
 pub mod desc;
 pub mod style;
@@ -17,7 +18,7 @@ pub type PError<'a> = ParseError<State<&'a str>>;
 ///
 /// An identifier is made up of either letters, numbers
 /// or `_`.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Ident {
     /// The identifier's value/name
     pub name: String,
@@ -158,8 +159,8 @@ pub fn format_parse_error<'a, I, W, S>(w: W, source: I, err: ParseError<S>) -> R
                             token_len = m.len();
                         },
                         Info::Token(t) => {
-                            write!(&mut msg, "{}", t.escape_default())?;
-                            write!(&mut label, "{}", t.escape_default())?;
+                            write!(&mut msg, "{}", t)?;
+                            write!(&mut label, "{}", t)?;
                         },
                         _ => unimplemented!(),
                     },
@@ -183,7 +184,7 @@ pub fn format_parse_error<'a, I, W, S>(w: W, source: I, err: ParseError<S>) -> R
                             msg.push_str(m);
                         },
                         Info::Token(t) => {
-                            write!(&mut msg, "{}", t.escape_default())?;
+                            write!(&mut msg, "{}", t)?;
                         },
                         _ => unimplemented!(),
                     },

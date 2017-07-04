@@ -22,10 +22,11 @@
 //! }
 //! ```
 
+use fnv::FnvHashMap;
+
 use combine::*;
 use combine::char::{char, digit, alpha_num, spaces, string, space};
 use combine::primitives::{Error, SourcePosition};
-use std::collections::HashMap;
 use std::fmt::Debug;
 use super::{
     Ident,
@@ -64,13 +65,13 @@ impl Document {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Rule {
-    pub matchers: Vec<(Matcher, HashMap<Ident, ValueType>)>,
-    pub styles: HashMap<Ident, ExprType>,
+    pub matchers: Vec<(Matcher, FnvHashMap<Ident, ValueType>)>,
+    pub styles: FnvHashMap<Ident, ExprType>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Matcher {
     Element(Element),
     Text,
@@ -82,7 +83,7 @@ pub enum Matcher {
 /// An element does nothing by itself (bar special elements
 /// as defined by the program, widgets) and must be controlled
 /// via a style document.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Element {
     /// The name of this element
     pub name: Ident,
@@ -90,7 +91,7 @@ pub struct Element {
 
 /// Contains a value and debugging information
 /// for the value.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ValueType {
     /// The parsed value
     pub value: Value,
@@ -101,7 +102,7 @@ pub struct ValueType {
 }
 
 /// A parsed value for a property
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     /// A boolean value
     Boolean(bool),
@@ -115,7 +116,7 @@ pub enum Value {
     Variable(Ident),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExprType {
     /// The parsed value
     pub expr: Expr,
@@ -125,7 +126,7 @@ pub struct ExprType {
     pub position: Position,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Value(Value),
     Neg(Box<ExprType>),
@@ -211,7 +212,7 @@ fn ident<I>(input: I) -> ParseResult<Ident, I>
         .parse_stream(input)
 }
 
-fn styles<I>(input: I) -> ParseResult<HashMap<Ident, ExprType>, I>
+fn styles<I>(input: I) -> ParseResult<FnvHashMap<Ident, ExprType>, I>
     where I: Stream<Item=char, Position=SourcePosition>,
           I: Debug,
           I::Range: Debug
@@ -219,7 +220,7 @@ fn styles<I>(input: I) -> ParseResult<HashMap<Ident, ExprType>, I>
 
     let (_, mut input) = try!(char('{').parse_lazy(input).into());
 
-    let mut styles = HashMap::new();
+    let mut styles = FnvHashMap::default();
     loop {
         match input.clone().combine(|input| spaces().with(char('}')).parse_lazy(input).into()) {
             Ok(i) => {
@@ -277,10 +278,10 @@ fn style_property<I>(input: I) -> ParseResult<(Ident, ExprType), I>
 
 fn op_prio(c: char) -> u8 {
     match c {
-        '-' => 11,
-        '+' => 10,
-        '/' => 5,
-        '*' => 4,
+        '-' => 4,
+        '+' => 5,
+        '/' => 8,
+        '*' => 7,
         _ => 255,
     }
 }
@@ -290,25 +291,18 @@ fn expr<I>(input: I) -> ParseResult<ExprType, I>
           I: Debug,
           I::Range: Debug
 {
-    expr_inner(input, 255)
+    let (v, input) = parser(expr_value).parse_stream(input)?;
+    input.combine(|input| expr_inner(input, v, 255))
 }
 
-fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
+fn expr_value<I>(input: I) -> ParseResult<ExprType, I>
     where I: Stream<Item=char, Position=SourcePosition>,
           I: Debug,
           I::Range: Debug
 {
-
     let (neg, mut input) = try!(
         optional((position(), token('-')))
             .parse_lazy(input).into()
-    );
-
-    let op_ex = choice!(
-        token('+'),
-        token('*'),
-        token('-'),
-        token('/')
     );
 
     let (bracket, i) = try!(input.combine(|input|
@@ -318,8 +312,9 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
     input = i;
 
     let v = if bracket.is_some() {
-        let (v, i) = try!(input.combine(|input| {
-            (parser(|input| expr_inner(input, 255)), token(')'))
+        let (val, i) = input.combine(|input| parser(expr_value).parse_stream(input))?;
+        let (v, i) = try!(i.combine(move |input| {
+            (parser(move |input| expr_inner(input, val.clone(), 255)), token(')'))
                 .map(|v| v.0)
                 .parse_lazy(input).into()
         }));
@@ -359,7 +354,7 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
             }
         }
     };
-    let mut v = if let Some((pos, _)) = neg {
+    let v = if let Some((pos, _)) = neg {
         ExprType {
             expr: Expr::Neg(Box::new(v)),
             position: pos.into(),
@@ -367,9 +362,25 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
     } else {
         v
     };
+    Ok((v, input))
+}
+
+fn expr_inner<I>(input: I, mut v: ExprType, mut max: u8) -> ParseResult<ExprType, I>
+    where I: Stream<Item=char, Position=SourcePosition>,
+          I: Debug,
+          I::Range: Debug
+{
+    let op_ex_o = choice!(
+        token('+'),
+        token('*'),
+        token('-'),
+        token('/')
+    );
+
+    let (_, mut input) = spaces().parse_stream(input)?;
 
     loop {
-        let op_ex = op_ex.clone();
+        let op_ex = op_ex_o.clone();
         let (op, i) = try!(input.combine(|input|
             look_ahead(optional(spaces()
                 .with(op_ex.clone())))
@@ -381,14 +392,33 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
             if p > max {
                 break;
             }
+            max = p;
             let ((pos, op), i) = try!(input.combine(|input| spaces().with((position(), op_ex)).parse_lazy(input).into()));
             input = i;
-            let (right, i) = try!(input.combine(|input| spaces()
-                .with(parser(|i| expr_inner(i, p)))
+            let (mut right, i) = try!(input.combine(|input| spaces()
+                .with(parser(expr_value))
                 .parse_lazy(input)
                 .into()
             ));
             input = i;
+
+            let op_ex = op_ex_o.clone();
+            let (next_op, i) = try!(input.combine(|input|
+                look_ahead(optional(spaces()
+                    .with(op_ex.clone())))
+                .parse_lazy(input).into()
+            ));
+            input = i;
+            let p = next_op.map(|op| op_prio(op));
+            let should_break = if p.map_or(false, |p| p > max) {
+                let (nv, i) = input.combine(|input| {
+                    parser(move |input| expr_inner(input, right.clone(), p.unwrap())).parse_stream(input)
+                })?;
+                input = i;
+                right = nv;
+                true
+            } else { false };
+
             v = ExprType {
                 expr: match op {
                     '+' => Expr::Add(Box::new(v), Box::new(right)),
@@ -399,6 +429,9 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
                 },
                 position: pos.into(),
             };
+            if should_break {
+                break;
+            }
         } else {
             break;
         }
@@ -406,7 +439,7 @@ fn expr_inner<I>(input: I, max: u8) -> ParseResult<ExprType, I>
     Ok((v, input))
 }
 
-fn properties<I>(input: I) -> ParseResult<HashMap<Ident, ValueType>, I>
+fn properties<I>(input: I) -> ParseResult<FnvHashMap<Ident, ValueType>, I>
     where I: Stream<Item=char, Position=SourcePosition>
 {
     let properties = (
