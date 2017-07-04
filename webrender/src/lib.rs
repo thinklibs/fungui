@@ -1,6 +1,5 @@
 
 extern crate webrender;
-extern crate webrender_traits;
 extern crate gleam;
 extern crate stylish;
 extern crate app_units;
@@ -19,7 +18,7 @@ mod border;
 mod filter;
 
 use webrender::*;
-use webrender_traits::*;
+use webrender_api::*;
 use std::error::Error;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -404,15 +403,14 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         }
 
         if let Some(key) = info.image {
-            let clip = self.builder.push_clip_region(&rect, None, None);
-            self.builder.push_image(rect, clip, rect.size, LayoutSize::zero(), ImageRendering::Auto, key);
+            self.builder.push_image(rect, rect, rect.size, LayoutSize::zero(), ImageRendering::Auto, key);
+
         }
 
         if let Some(col) = info.background_color.as_ref() {
             match *col {
                 Color::Solid(col) => {
-                    let clip = self.builder.push_clip_region(&rect, None, None);
-                    self.builder.push_rect(rect, clip, col);
+                    self.builder.push_rect(rect, rect, col);
                 },
                 Color::Gradient{angle, ref stops} => {
                     let len = width.max(height) / 2.0;
@@ -425,9 +423,8 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         stops.clone(),
                         ExtendMode::Clamp,
                     );
-                    let clip = self.builder.push_clip_region(&rect, None, None);
                     self.builder.push_gradient(
-                        rect, clip,
+                        rect, rect,
                         g,
                         LayoutSize::new(width, height),
                         LayoutSize::zero(),
@@ -437,20 +434,18 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         }
 
         if let Some(border) = info.border {
-            let clip = self.builder.push_clip_region(&rect, None, None);
             self.builder.push_border(
                 rect,
-                clip,
+                rect,
                 info.border_widths,
                 border,
             );
         }
 
         if let Some(txt) = info.text.as_ref() {
-            let clip = self.builder.push_clip_region(&rect, None, None);
             self.builder.push_text(
                 rect,
-                clip,
+                rect,
                 &txt.glyphs,
                 txt.font,
                 txt.color,

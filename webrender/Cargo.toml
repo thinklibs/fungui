@@ -15,13 +15,7 @@ sdl2 = "0.30.0"
 image = "0.13.0"
 
 [dependencies.webrender]
-git = "https://github.com/thinkofname/webrender"
-branch = "border-image-fill"
+git = "https://github.com/servo/webrender"
+rev = "c30245d"
 default-features = false
 features = [ "freetype-lib" ]
-
-[dependencies.webrender_traits]
-git = "https://github.com/thinkofname/webrender"
-branch = "border-image-fill"
-default-features = false
-features = []
