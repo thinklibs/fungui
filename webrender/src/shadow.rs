@@ -1,7 +1,7 @@
 
 use stylish;
 use stylish::error::ErrorKind;
-use webrender_traits::*;
+use webrender::api::*;
 use color::*;
 
 #[derive(Clone, Debug)]
