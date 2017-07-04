@@ -1,3 +1,5 @@
+dist: trusty
+sudo: required
 language: rust
 rust:
   - stable
@@ -7,11 +9,9 @@ matrix:
   allow_failures:
     - rust: nightly
 
-addons:
-  apt:
-    packages:
-      - libsdl2-2.0-0
-      - libsdl2-dev
+before_install:
+  - sudo apt-get update -qq
+  - sudo apt-get install -qq -y libsdl2-2.0-0 libsdl2-dev
 script:
   - cargo build --all
   - cargo test --all
