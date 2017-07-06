@@ -120,7 +120,7 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
                         let size = (offset + finfo.info.get_glyph_h_metrics(index).advance_width as f32) * scale;
                         last_glyph = Some(index);
 
-                        if current_size + word_size + size > self.remaining as f32{
+                        if current_size + word_size + size > self.remaining as f32 || c == '\n' {
                             // Split at word
                             obj.text_splits.push((
                                 current.0, current.1,
@@ -136,8 +136,12 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
                             current_size = 0.0;
                             self.remaining = self.width;
                             self.line += 1;
+
                             if !c.is_whitespace() {
                                 word_size += size;
+                            } else {
+                                current.0 += c.len_utf8();
+                                current.1 += c.len_utf8();
                             }
                         } else {
                             word_size += size;

@@ -178,6 +178,8 @@ grid_box {
     manager.add_node_str(r##"
 scroll_box {
     inner {
+        "Example text
+A B C"
         "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Quisque pharetra arcu vel urna tincidunt consectetur. Vivamus non nibh at mauris consectetur egestas. Ut pellentesque lorem et elit venenatis, nec rutrum lorem interdum. Ut pellentesque velit sed leo pulvinar blandit. Donec et eros posuere, ultrices tellus nec, dapibus ex. In elementum ligula vel tristique rutrum. Fusce id quam massa. Pellentesque in lectus eu felis venenatis gravida. Donec et velit vel turpis auctor imperdiet. Fusce eleifend sit amet lacus a placerat. Sed suscipit nisi nec nulla pretium accumsan. Curabitur aliquet sed magna id lobortis."
 
         "Vestibulum cursus nulla a sollicitudin semper. Duis eu est malesuada orci placerat porttitor vel fringilla libero. Mauris vitae nulla quis turpis vestibulum tincidunt eget egestas tortor. Quisque tincidunt eleifend nunc viverra venenatis. Phasellus ullamcorper libero id enim volutpat malesuada quis in sem. Fusce augue nibh, aliquam congue nibh quis, bibendum tempor libero. Mauris id lectus ac justo imperdiet accumsan sit amet eget eros. Cras orci odio, facilisis ut mollis id, faucibus ac lectus. Integer diam nibh, lacinia sit amet velit non, mattis ullamcorper elit."
