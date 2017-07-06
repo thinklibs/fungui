@@ -612,6 +612,18 @@ impl <RInfo> Node<RInfo> {
         Ref::map(inner, |v| v.render_object.as_ref().unwrap())
     }
 
+    /// Returns the raw position of the node.
+    ///
+    /// This position isn't transformed and is relative
+    /// to the parent instead of absolute like `render_position`
+    pub fn raw_position(&self) -> Rect {
+        let inner = self.inner.borrow();
+        inner.render_object
+            .as_ref()
+            .map(|v| v.draw_rect)
+            .unwrap_or(Rect{x:0, y:0, width: 0, height: 0})
+    }
+
     /// Returns the rendering position of the node.
     ///
     /// Useful for IME handling.
