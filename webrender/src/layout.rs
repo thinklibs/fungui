@@ -127,7 +127,7 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
                                 Rect {
                                     x: self.width - self.remaining,
                                     y: self.line * self.line_height,
-                                    width: self.remaining,
+                                    width: current_size.ceil() as i32,
                                     height: self.line_height,
                                 }
                             ));
