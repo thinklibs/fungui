@@ -1,7 +1,7 @@
 
 use std::rc::Rc;
 use stb_truetype;
-use webrender_traits::RenderApi;
+use webrender::api::RenderApi;
 use stylish::{Rect, LayoutEngine, RenderObject};
 use super::{
     Info,

@@ -1,5 +1,5 @@
 
-use webrender_traits::*;
+use webrender::api::*;
 use stylish;
 use stylish::error::ErrorKind;
 
