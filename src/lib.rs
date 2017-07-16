@@ -277,7 +277,7 @@ impl <RInfo> LayoutEngine<RInfo> for AbsoluteLayout {
 }
 
 /// The position and size of an element
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rect {
     pub x: i32,
     pub y: i32,
