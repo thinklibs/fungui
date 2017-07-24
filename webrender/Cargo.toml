@@ -11,7 +11,7 @@ stb_truetype = "0.2.1"
 euclid = "0.15"
 
 [dev-dependencies]
-sdl2 = "0.30.0"
+glutin = "0.9"
 image = "0.13.0"
 
 [dependencies.webrender]
