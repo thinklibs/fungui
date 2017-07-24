@@ -1,12 +1,13 @@
 #[macro_use]
 extern crate stylish;
 extern crate stylish_webrender;
-extern crate sdl2;
+extern crate glutin;
 extern crate image;
 
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
-use sdl2::mouse::MouseButton;
+use glutin::{WindowEvent as WiEvent, Event,
+             VirtualKeyCode as KeyC, GlRequest,
+             Api, ElementState as ElSt, MouseButton as MsBtn, GlContext,
+             KeyboardInput, MouseScrollDelta};
 
 use std::thread;
 use std::time::Duration;
@@ -73,24 +74,20 @@ impl stylish_webrender::Assets for TestLoader {
 }
 
 fn main() {
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
+    let mut events_loop = glutin::EventsLoop::new();
+    let window = glutin::WindowBuilder::new()
+        .with_title("Stylish")
+        .with_dimensions(800, 480);
+    let context_b = glutin::ContextBuilder::new()
+        .with_stencil_buffer(8)
+        .with_depth_buffer(24)
+        .with_gl(GlRequest::Specific(Api::OpenGl, (3, 2)))
+        .with_gl_profile(glutin::GlProfile::Core);
+    let gl_window = glutin::GlWindow::new(window, context_b, &events_loop).unwrap();
 
-    let gl_attr = video_subsystem.gl_attr();
-    gl_attr.set_stencil_size(8);
-    gl_attr.set_depth_size(24);
-    gl_attr.set_context_major_version(3);
-    gl_attr.set_context_minor_version(2);
-    gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
-
-    let window = video_subsystem.window("Stylish", 800, 480)
-        .opengl()
-        .resizable()
-        .build()
-        .unwrap();
-
-    let context = window.gl_create_context().unwrap();
-    window.gl_make_current(&context).unwrap();
+    unsafe {
+        gl_window.make_current().unwrap();
+    }
 
     let mut manager = stylish::Manager::new();
 
@@ -99,13 +96,10 @@ fn main() {
     }
 
     let mut renderer = stylish_webrender::WebRenderer::new(
-        |n| video_subsystem.gl_get_proc_address(n),
+        |n| gl_window.get_proc_address(n),
         TestLoader,
         &mut manager,
     )
-        .unwrap();
-
-    let mut event_pump = sdl_context.event_pump()
         .unwrap();
 
     manager.add_node_str(r##"
@@ -372,34 +366,39 @@ cbox(w=width, h=height, col=color) {
 
     'main_loop:
     loop {
+        let mut finished = false;
         let start = ::std::time::Instant::now();
 
-        let (width, height) = window.drawable_size();
+        let (width, height) = gl_window.get_inner_size_pixels().unwrap();
         renderer.layout(&mut manager, width, height);
 
-        for event in event_pump.poll_iter() {
+        events_loop.poll_events(|event| {
+            if let Event::WindowEvent {event, .. } = event {
             match event {
-                Event::Quit {..} | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => {
-                    break 'main_loop;
+                WiEvent::Closed |
+                WiEvent::KeyboardInput {input: KeyboardInput {virtual_keycode: Some(KeyC::Escape), .. } , .. } => {
+                    finished = true;
+                    return;
                 },
-                Event::MouseButtonDown{mouse_btn: MouseButton::Left, x, y, ..} => {
-                    for n in manager.query_at(x, y)
+                WiEvent::MouseInput{state: ElSt::Pressed, button: MsBtn::Left, ..} => {
+                    for n in manager.query_at(mouse_pos.0, mouse_pos.1)
                         .matches()
                     {
                         if n.get_property::<i32>("x").is_some() && n.get_property::<i32>("y").is_some() {
                             current_drag = Some(Drag {
                                 target: n,
-                                x: x,
-                                y: y,
+                                x: mouse_pos.0,
+                                y: mouse_pos.1,
                             });
                             break;
                         }
                     }
                 },
-                Event::MouseButtonUp{mouse_btn: MouseButton::Left, ..} => {
+                WiEvent::MouseInput{state: ElSt::Released, button: MsBtn::Left, ..} => {
                     current_drag = None;
                 },
-                Event::MouseMotion{x, y, ..} => {
+                WiEvent::MouseMoved{position: (x, y), ..} => {
+                    let (x, y) =  (x as i32, y as i32);
                     mouse_pos = (x, y);
                     if let Some(last_hover) = last_hover.take() {
                         last_hover.set_property("hover", false);
@@ -424,7 +423,7 @@ cbox(w=width, h=height, col=color) {
                         last_hover = Some(hover);
                     }
                 },
-                Event::MouseWheel{y, ..} => {
+                WiEvent::MouseWheel{delta, ..} => {
                     for node in manager.query_at(mouse_pos.0, mouse_pos.1)
                         .matches()
                     {
@@ -442,6 +441,10 @@ cbox(w=width, h=height, col=color) {
                                 max = 0;
                             }
                             let oy = node.get_property::<f64>("scroll_y").unwrap_or(0.0);
+                            let y = match delta {
+                                MouseScrollDelta::LineDelta(_, y) => y,
+                                MouseScrollDelta::PixelDelta(_, y) => y,
+                            };
                             node.set_property("scroll_y", (oy + y as f64 * 5.0).min(0.0).max(-max as f64));
                             break;
                         }
@@ -449,11 +452,16 @@ cbox(w=width, h=height, col=color) {
                 },
                 _ => {}
             }
+            }
+        });
+
+        if finished {
+            break;
         }
 
         renderer.render(&mut manager, width, height);
 
-        window.gl_swap_window();
+        gl_window.swap_buffers().unwrap();
 
         let frame_time = start.elapsed();
         if frame_time < target_frame_time {
