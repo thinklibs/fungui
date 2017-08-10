@@ -48,7 +48,7 @@ pub struct WebRenderer<A> {
     api: RenderApi,
     frame_id: Epoch,
 
-    images: HashMap<String, ImageKey>,
+    images: HashMap<String, (ImageKey, ImageDescriptor)>,
     fonts: FontMap,
 
     skip_build: bool,
@@ -128,6 +128,17 @@ impl <A: Assets + 'static> WebRenderer<A> {
             fonts: fonts,
             skip_build: false,
         })
+    }
+
+    pub fn update_image<S>(&mut self, key: &str, img: Image) {
+        if let Some(&(key, desc)) = self.images.get(key) {
+            self.api.update_image(
+                key,
+                desc,
+                ImageData::new(img.data),
+                None
+            );
+        }
     }
 
     pub fn layout(&mut self, manager: &mut stylish::Manager<Info>, width: u32, height: u32) {
@@ -213,7 +224,7 @@ struct WebBuilder<'a, A: 'a> {
     builder: &'a mut DisplayListBuilder,
 
     assets: Rc<A>,
-    images: &'a mut HashMap<String, ImageKey>,
+    images: &'a mut HashMap<String, (ImageKey, ImageDescriptor)>,
     fonts: FontMap,
 
     offset: Vec<LayoutPoint>,
@@ -305,13 +316,11 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
             };
 
             let mut load_image = |v| match self.images.entry(v) {
-                    Entry::Occupied(v) => Some(*v.get()),
+                    Entry::Occupied(v) => Some(v.get().0),
                     Entry::Vacant(v) => {
                         if let Some(img) = self.assets.load_image(v.key()) {
                             let key = self.api.generate_image_key();
-                            self.api.add_image(
-                                key,
-                                ImageDescriptor {
+                            let desc = ImageDescriptor {
                                     format: match img.components {
                                         Components::RGB => ImageFormat::RGB8,
                                         Components::BGRA => ImageFormat::BGRA8,
@@ -321,11 +330,14 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                                     stride: None,
                                     offset: 0,
                                     is_opaque: img.is_opaque,
-                                },
+                                };
+                            self.api.add_image(
+                                key,
+                                desc,
                                 ImageData::new(img.data),
                                 None
                             );
-                            Some(*v.insert(key))
+                            Some(v.insert((key, desc)).0)
                         } else {
                             None
                         }
