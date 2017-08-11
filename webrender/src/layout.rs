@@ -1,7 +1,7 @@
 
 use std::rc::Rc;
 use stb_truetype;
-use webrender::api::RenderApi;
+use webrender::api::{ResourceUpdates, RenderApi};
 use stylish::{Rect, LayoutEngine, RenderObject};
 use super::{
     Info,
@@ -83,7 +83,9 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
                         if let Some(data) = self.assets.load_font(v.key()) {
                             let info = stb_truetype::FontInfo::new(data.clone(), 0).unwrap();
                             let key = self.api.generate_font_key();
-                            self.api.add_raw_font(key, data, 0);
+                            let mut resources = ResourceUpdates::new();
+                            resources.add_raw_font(key, data, 0);
+                            self.api.update_resources(resources);
                             Some(v.insert(Font {
                                 key: key,
                                 info: info,

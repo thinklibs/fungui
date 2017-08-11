@@ -16,6 +16,6 @@ image = "0.13.0"
 
 [dependencies.webrender]
 git = "https://github.com/servo/webrender"
-rev = "fb85cb5363d97e11a2204fd8f0e7ebd28f6910e4"
+rev = "101c69db1a989fe89c308dabd53cf50aedfe4a96"
 default-features = false
 features = [ "freetype-lib" ]

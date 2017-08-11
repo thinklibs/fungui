@@ -44,14 +44,23 @@ type WResult<T> = Result<T, Box<Error>>;
 ///                        in decimal 0-255.
 pub struct WebRenderer<A> {
     assets: Rc<A>,
-    renderer: Renderer,
+    renderer: Option<Renderer>,
     api: RenderApi,
+    document: DocumentId,
     frame_id: Epoch,
 
+    resources: ResourceUpdates,
     images: HashMap<String, (ImageKey, ImageDescriptor)>,
     fonts: FontMap,
 
     skip_build: bool,
+    force_build: bool,
+}
+
+impl <A> Drop for WebRenderer<A> {
+    fn drop(&mut self) {
+        self.renderer.take().unwrap().deinit();
+    }
 }
 
 type FontMap = Rc<RefCell<HashMap<String, Font>>>;
@@ -96,12 +105,13 @@ impl <A: Assets + 'static> WebRenderer<A> {
             clear_framebuffer: false,
             .. Default::default()
         };
-        let (renderer, sender) = webrender::Renderer::new(gl, options, DeviceUintSize::new(800, 480)).unwrap();
+        let (renderer, sender) = webrender::Renderer::new(gl, options).unwrap();
         let api = sender.create_api();
         renderer.set_render_notifier(Box::new(Dummy));
+        let document = api.add_document(DeviceUintSize::new(800, 480));
 
         let pipeline = PipelineId(0, 0);
-        api.set_root_pipeline(pipeline);
+        api.set_root_pipeline(document, pipeline);
 
         {
             let fonts = fonts.clone();
@@ -120,25 +130,54 @@ impl <A: Assets + 'static> WebRenderer<A> {
 
         Ok(WebRenderer {
             assets: assets,
-            renderer: renderer,
+            renderer: Some(renderer),
             api: api,
             frame_id: Epoch(0),
+            document: document,
 
+            resources: ResourceUpdates::new(),
             images: HashMap::new(),
             fonts: fonts,
             skip_build: false,
+            force_build: false,
         })
     }
 
-    pub fn update_image<S>(&mut self, key: &str, img: Image) {
-        if let Some(&(key, desc)) = self.images.get(key) {
-            self.api.update_image(
-                key,
-                desc,
-                ImageData::new(img.data),
-                None
-            );
-        }
+    pub fn update_image(&mut self, key: &str, img: Image) {
+        use std::collections::hash_map::Entry;
+        match self.images.entry(key.to_owned()) {
+            Entry::Occupied(val) => {
+                let (key, desc) = *val.get();
+                self.resources.update_image(
+                    key,
+                    desc,
+                    ImageData::new(img.data),
+                    None
+                );
+            },
+            Entry::Vacant(val) => {
+                let key = self.api.generate_image_key();
+                let desc = ImageDescriptor {
+                    format: match img.components {
+                        Components::RGB => ImageFormat::RGB8,
+                        Components::BGRA => ImageFormat::BGRA8,
+                    },
+                    width: img.width,
+                    height: img.height,
+                    stride: None,
+                    offset: 0,
+                    is_opaque: img.is_opaque,
+                };
+                self.resources.add_image(
+                    key,
+                    desc,
+                    ImageData::new(img.data),
+                    None
+                );
+                val.insert((key, desc));
+            },
+        };
+        self.force_build = true;
     }
 
     pub fn layout(&mut self, manager: &mut stylish::Manager<Info>, width: u32, height: u32) {
@@ -150,17 +189,21 @@ impl <A: Assets + 'static> WebRenderer<A> {
     }
 
     pub fn render(&mut self, manager: &mut stylish::Manager<Info>, width: u32, height: u32) {
+        use std::mem::replace;
         self.frame_id.0 += 1;
         let pipeline = PipelineId(0, 0);
-        self.renderer.update();
+        self.renderer.as_mut().unwrap().update();
         let size = DeviceUintSize::new(width, height);
         let dsize = LayoutSize::new(width as f32, height as f32);
 
-        if !self.skip_build {
+        if !self.skip_build || self.force_build {
+            self.force_build = false;
             let mut builder = DisplayListBuilder::new(
                 pipeline,
                 dsize
             );
+
+            let mut resources = replace(&mut self.resources, ResourceUpdates::new());
 
             manager.render(&mut WebBuilder {
                 api: &self.api,
@@ -169,9 +212,11 @@ impl <A: Assets + 'static> WebRenderer<A> {
                 images: &mut self.images,
                 fonts: self.fonts.clone(),
                 offset: Vec::with_capacity(16),
+                resources: &mut resources,
             });
 
             self.api.set_window_parameters(
+                self.document,
                 size,
                 DeviceUintRect::new(
                     DeviceUintPoint::zero(),
@@ -179,16 +224,18 @@ impl <A: Assets + 'static> WebRenderer<A> {
                 )
             );
             self.api.set_display_list(
-                None,
+                self.document,
                 self.frame_id,
+                None,
                 dsize,
                 builder.finalize(),
                 false,
+                resources,
             );
-            self.api.generate_frame(None);
+            self.api.generate_frame(self.document, None);
         }
 
-        self.renderer.render(size);
+        self.renderer.as_mut().unwrap().render(size);
         self.skip_build = false;
     }
 }
@@ -222,6 +269,7 @@ struct Text {
 struct WebBuilder<'a, A: 'a> {
     api: &'a RenderApi,
     builder: &'a mut DisplayListBuilder,
+    resources: &'a mut ResourceUpdates,
 
     assets: Rc<A>,
     images: &'a mut HashMap<String, (ImageKey, ImageDescriptor)>,
@@ -253,7 +301,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         if let Some(data) = self.assets.load_font(v.key()) {
                             let info = stb_truetype::FontInfo::new(data.clone(), 0).unwrap();
                             let key = self.api.generate_font_key();
-                            self.api.add_raw_font(key, data, 0);
+                            self.resources.add_raw_font(key, data, 0);
                             Some(v.insert(Font {
                                 key: key,
                                 info: info,
@@ -321,17 +369,17 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         if let Some(img) = self.assets.load_image(v.key()) {
                             let key = self.api.generate_image_key();
                             let desc = ImageDescriptor {
-                                    format: match img.components {
-                                        Components::RGB => ImageFormat::RGB8,
-                                        Components::BGRA => ImageFormat::BGRA8,
-                                    },
-                                    width: img.width,
-                                    height: img.height,
-                                    stride: None,
-                                    offset: 0,
-                                    is_opaque: img.is_opaque,
-                                };
-                            self.api.add_image(
+                                format: match img.components {
+                                    Components::RGB => ImageFormat::RGB8,
+                                    Components::BGRA => ImageFormat::BGRA8,
+                                },
+                                width: img.width,
+                                height: img.height,
+                                stride: None,
+                                offset: 0,
+                                is_opaque: img.is_opaque,
+                            };
+                            self.resources.add_image(
                                 key,
                                 desc,
                                 ImageData::new(img.data),
@@ -481,7 +529,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         }
 
         info.clip_id = if info.clip_overflow {
-            let id = self.builder.define_scroll_frame(None, rect, rect, None, None);
+            let id = self.builder.define_scroll_frame(None, rect, rect, None, None, ScrollSensitivity::ScriptAndInputEvents);
             self.builder.push_clip_id(id);
             Some(id)
         } else {
