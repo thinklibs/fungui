@@ -13,6 +13,8 @@ mod color;
 use color::*;
 mod shadow;
 use shadow::*;
+mod text_shadow;
+use text_shadow::*;
 mod layout;
 mod border;
 mod filter;
@@ -94,6 +96,7 @@ impl <A: Assets + 'static> WebRenderer<A> {
         manager.add_func_raw("border_width", border::border_width);
         manager.add_func_raw("border_image", border::border_image);
         manager.add_func_raw("filters", filter::filters);
+        manager.add_func_raw("text_shadow", text_shadow);
 
         let fonts = Rc::new(RefCell::new(HashMap::new()));
         let assets = Rc::new(assets);
@@ -247,6 +250,7 @@ pub struct Info {
     shadows: Vec<Shadow>,
 
     text: Option<Text>,
+    text_shadow: Option<TShadow>,
 
     border_widths: BorderWidths,
     border: Option<BorderDetails>,
@@ -403,6 +407,8 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         .cloned())
                     .unwrap_or_else(Vec::new),
                 text: text,
+                text_shadow: obj.get_custom_value::<TShadow>("text_shadow")
+                    .cloned(),
 
                 border_widths: obj.get_custom_value::<border::BorderWidthInfo>("border_width")
                     .map(|v| v.widths)
@@ -502,6 +508,13 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         }
 
         if let Some(txt) = info.text.as_ref() {
+            if let Some(ts) = info.text_shadow.as_ref() {
+                self.builder.push_text_shadow(rect, None, TextShadow {
+                    offset: ts.offset,
+                    color: ts.color,
+                    blur_radius: ts.blur_radius,
+                });
+            }
             self.builder.push_text(
                 rect,
                 None,
@@ -511,6 +524,9 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 app_units::Au::from_f64_px(txt.size as f64 * 0.8),
                 None
             );
+            if info.text_shadow.is_some() {
+                self.builder.pop_text_shadow();
+            }
         }
 
         for shadow in &info.shadows {
