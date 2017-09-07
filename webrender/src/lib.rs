@@ -433,10 +433,10 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                     }),
 
                 clip_id: None,
-                clip_overflow: obj.get_value::<bool>("clip_overflow").unwrap_or(false),
+                clip_overflow: obj.clip_overflow,
                 scroll_offset: LayoutVector2D::new(
-                    obj.get_value::<f64>("scroll_x").unwrap_or(0.0) as f32,
-                    obj.get_value::<f64>("scroll_y").unwrap_or(0.0) as f32,
+                    obj.scroll_position.0 as f32,
+                    obj.scroll_position.1 as f32,
                 ),
 
                 filters: obj.get_custom_value::<filter::Filters>("filters")

@@ -379,12 +379,37 @@ impl <RInfo> Node<RInfo> {
                 } else {
                     Rect{x: 0, y: 0, width: 0, height: 0}
                 };
+                let mut scroll_x_set = false;
+                let mut scroll_y_set = false;
+                let mut clip_overflow_set = false;
                 for rule in styles.find_matching_rules(self) {
                     for key in rule.syn.styles.keys() {
-                        let key = &key.name;
-                        if let Entry::Vacant(e) = obj.vars.entry(key.clone()) {
-                            if let Some(v) = rule.get_value(styles, parent_rect, key) {
-                                e.insert(v);
+                        let key = key.name.as_str();
+                        match key {
+                            "scroll_x" => if !scroll_x_set {
+                                if let Some(v) = rule.get_value(styles, parent_rect, key) {
+                                    scroll_x_set = true;
+                                    obj.scroll_position.0 = v;
+                                }
+                            },
+                            "scroll_y" => if !scroll_y_set {
+                                if let Some(v) = rule.get_value(styles, parent_rect, key) {
+                                    scroll_y_set = true;
+                                    obj.scroll_position.1 = v;
+                                }
+                            },
+                            "clip_overflow" => if !clip_overflow_set {
+                                if let Some(v) = rule.get_value(styles, parent_rect, key) {
+                                    clip_overflow_set = true;
+                                    obj.clip_overflow = v;
+                                }
+                            },
+                            _ => {
+                                if let Entry::Vacant(e) = obj.vars.entry(key.to_owned()) {
+                                    if let Some(v) = rule.get_value(styles, parent_rect, key) {
+                                        e.insert(v);
+                                    }
+                                }
                             }
                         }
                     }
@@ -645,9 +670,9 @@ impl <RInfo> Node<RInfo> {
                 Some(v) => v,
                 None => return None,
             };
-            rect.x += p_obj.get_value::<f64>("scroll_x").unwrap_or(0.0) as i32;
-            rect.y += p_obj.get_value::<f64>("scroll_y").unwrap_or(0.0) as i32;
-            if p_obj.get_value::<bool>("clip_overflow").unwrap_or(false) {
+            rect.x += p_obj.scroll_position.0 as i32;
+            rect.y += p_obj.scroll_position.1 as i32;
+            if p_obj.clip_overflow {
                 if rect.x < 0 {
                     rect.width += rect.x;
                     rect.x = 0;
@@ -938,13 +963,24 @@ pub struct RenderObject<RInfo> {
     /// The text of this element if it is text.
     pub text: Option<String>,
     pub text_splits: Vec<(usize, usize, Rect)>,
+
+    /// Scroll offset position
+    pub scroll_position: (f64, f64),
+    /// Whether to clip elements that fall outside this
+    /// element
+    pub clip_overflow: bool,
 }
 
 impl <RInfo> RenderObject<RInfo> {
     /// Gets the value from the style rules for this element
     pub fn get_value<V: PropertyValue>(&self, name: &str) -> Option<V> {
-        self.vars.get(name)
-            .and_then(|v| V::convert_from(&v))
+        match name {
+            "scroll_x" => V::convert_from(&Value::Float(self.scroll_position.0)),
+            "scroll_y" => V::convert_from(&Value::Float(self.scroll_position.1)),
+            "clip_overflow" => V::convert_from(&Value::Boolean(self.clip_overflow)),
+            _ => self.vars.get(name)
+                .and_then(|v| V::convert_from(&v)),
+        }
     }
 
     /// Gets the custom value from the style rules for this element
@@ -972,6 +1008,8 @@ impl <RInfo> Default for RenderObject<RInfo> {
             render_info: Default::default(),
             text: None,
             text_splits: Vec::new(),
+            scroll_position: (0.0, 0.0),
+            clip_overflow: false,
         }
     }
 }
