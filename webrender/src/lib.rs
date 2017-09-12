@@ -509,7 +509,10 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
         if let Some(txt) = info.text.as_ref() {
             if let Some(ts) = info.text_shadow.as_ref() {
-                self.builder.push_text_shadow(rect, None, TextShadow {
+                let shadow_rect = rect
+                    .translate(&ts.offset)
+                    .inflate(ts.blur_radius, ts.blur_radius);
+                self.builder.push_text_shadow(shadow_rect, None, TextShadow {
                     offset: ts.offset,
                     color: ts.color,
                     blur_radius: ts.blur_radius,
