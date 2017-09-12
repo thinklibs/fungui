@@ -60,22 +60,16 @@ impl <RInfo> Query<RInfo> {
         self
     }
 
-    fn collect_nodes(out: &mut Vec<Node<RInfo>>, node: &Node<RInfo>) {
-        let inner = node.inner.borrow();
-        out.push(node.clone());
-        if let NodeValue::Element(ref e) = inner.value {
-            for c in e.children.iter() {
-                Self::collect_nodes(out, c);
-            }
-        }
-    }
-
     pub fn matches(self) -> QueryIterator<RInfo> {
-        /// Collect nodes
-        let mut nodes = Vec::new();
-        Self::collect_nodes(&mut nodes, &self.root);
+        let rect = if self.location.is_some() {
+            self.root.render_position()
+                .unwrap_or(Rect{x: 0, y: 0, width: 0, height: 0})
+        } else {
+            // Dummy out unused data
+            Rect{x: 0, y: 0, width: 0, height: 0}
+        };
         QueryIterator {
-            nodes: nodes,
+            nodes: vec![(self.root, -1, rect)],
             rules: self.rules,
             location: self.location,
         }
@@ -87,7 +81,7 @@ impl <RInfo> Query<RInfo> {
 }
 
 pub struct QueryIterator<RInfo> {
-    nodes: Vec<Node<RInfo>>,
+    nodes: Vec<(Node<RInfo>, isize, Rect)>,
     rules: Vec<Rule>,
     location: Option<AtLocation>,
 }
@@ -105,15 +99,96 @@ impl <RInfo> Clone for QueryIterator<RInfo> {
 impl <RInfo> Iterator for QueryIterator<RInfo> {
     type Item = Node<RInfo>;
     fn next(&mut self) -> Option<Node<RInfo>> {
+
+        enum Action<RInfo> {
+            Pop,
+            Push(Node<RInfo>, Rect),
+            Nothing(Node<RInfo>, Rect),
+        }
+
         'search:
-        while let Some(node) = self.nodes.pop() {
+        loop {
+            let action = if let Some(cur) = self.nodes.last_mut() {
+                if cur.1 == -1 {
+                    cur.1 += 1;
+                    Action::Nothing(cur.0.clone(), cur.2)
+                } else {
+                    let inner = cur.0.inner.borrow();
+                    if let NodeValue::Element(ref e) = inner.value {
+                        cur.1 += 1;
+                        if let Some(node) = e.children.get((cur.1 - 1) as usize) {
+                            let rect = if self.location.is_some() {
+                                let mut rect = cur.2;
+                                let p = node.parent().inner;
+                                let inner = p.borrow();
+                                let p_obj = match inner.render_object
+                                    .as_ref()
+                                {
+                                    Some(v) => v,
+                                    None => return None,
+                                };
+                                let self_inner = node.inner.borrow();
+                                let s_obj = match self_inner.render_object
+                                    .as_ref()
+                                {
+                                    Some(v) => v,
+                                    None => return None,
+                                };
+
+                                rect.x += s_obj.draw_rect.x;
+                                rect.y += s_obj.draw_rect.y;
+                                rect.width = s_obj.draw_rect.width;
+                                rect.height = s_obj.draw_rect.height;
+
+                                rect.x += p_obj.scroll_position.0 as i32;
+                                rect.y += p_obj.scroll_position.1 as i32;
+                                if p_obj.clip_overflow {
+                                    if rect.x < 0 {
+                                        rect.width += rect.x;
+                                        rect.x = 0;
+                                    }
+                                    if rect.y < 0 {
+                                        rect.height += rect.y;
+                                        rect.y = 0;
+                                    }
+                                    if rect.x + rect.width >= p_obj.draw_rect.width {
+                                        rect.width -=  (rect.x + rect.width) - p_obj.draw_rect.width;
+                                    }
+                                    if rect.y + rect.height >= p_obj.draw_rect.height {
+                                        rect.height -= (rect.y + rect.height) - p_obj.draw_rect.height;
+                                    }
+                                }
+                                rect
+                            } else {
+                                Rect{x: 0, y: 0, width: 0, height: 0}
+                            };
+                            Action::Push(node.clone(), rect)
+                        } else {
+                            Action::Pop
+                        }
+                    } else {
+                        Action::Pop
+                    }
+                }
+            } else {
+                return None;
+            };
+
+            let (node, rect) = match action {
+                Action::Pop => {
+                    self.nodes.pop();
+                    continue 'search;
+                },
+                Action::Push(node, rect) => {
+                    self.nodes.push((node.clone(), -1, rect));
+                    (node, rect)
+                },
+                Action::Nothing(node, rect) => {
+                    (node, rect)
+                },
+            };
 
             if let Some(loc) = self.location {
-                let rect = match node.render_position() {
-                    Some(v) => v,
-                    None => continue,
-                };
-
                 if loc.x < rect.x || loc.x >= rect.x + rect.width
                     || loc.y < rect.y || loc.y >= rect.y + rect.height
                 {
@@ -150,7 +225,6 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
             }
             return Some(node);
         }
-        None
     }
 }
 
