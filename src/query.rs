@@ -137,8 +137,7 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
                     let inner = cur.0.inner.borrow();
                     if let NodeValue::Element(ref e) = inner.value {
                         cur.1 -= 1;
-                        let len = e.children.len();
-                        if let Some(node) = e.children.get(len - 1 - (cur.1 + 1) as usize) {
+                        if let Some(node) = e.children.get((cur.1 + 1) as usize) {
                             if let Some(loc) = self.location {
                                 let mut rect = cur.2;
                                 let p_rect = cur.2;
