@@ -11,5 +11,5 @@ members = [
 
 [dependencies]
 stylish_syntax = { path = "./syntax" }
-error-chain = "0.10.0"
+error-chain = "0.11.0"
 fnv = "1.0.5"
