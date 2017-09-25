@@ -443,7 +443,7 @@ impl <RInfo> Node<RInfo> {
             }
         }
         if dirty {
-            let mut inner: &mut NodeInner<RInfo> = &mut *self.inner.borrow_mut();
+            let inner: &mut NodeInner<RInfo> = &mut *self.inner.borrow_mut();
             if let Some(render) = inner.render_object.as_mut() {
                 let layout_engine = mem::replace(&mut render.layout_engine, RefCell::new(Box::new(AbsoluteLayout)));
                 if let NodeValue::Element(ref e) = inner.value {
@@ -559,7 +559,7 @@ impl <RInfo> Node<RInfo> {
             .as_ref()
             .and_then(|v| v.upgrade())
             .map_or(false, |v| Rc::ptr_eq(&v, &self.inner)), "Node isn't child to this element");
-        let mut inner: &mut NodeInner<_> = &mut * self.inner.borrow_mut();
+        let inner: &mut NodeInner<_> = &mut * self.inner.borrow_mut();
         if let NodeValue::Element(ref mut e) = inner.value {
             e.children.retain(|v| !Rc::ptr_eq(&v.inner, &node.inner));
             inner.dirty = true;
@@ -622,7 +622,7 @@ impl <RInfo> Node<RInfo> {
     pub fn set_text<S>(&self, txt: S)
         where S: Into<String>
     {
-        let mut inner: &mut NodeInner<_> = &mut *self.inner.borrow_mut();
+        let inner: &mut NodeInner<_> = &mut *self.inner.borrow_mut();
         if let NodeValue::Text(ref mut t) = inner.value {
             *t = txt.into();
             inner.dirty = true;
