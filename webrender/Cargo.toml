@@ -3,6 +3,9 @@ name = "stylish_webrender"
 version = "0.1.0"
 authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
 
+[features]
+debugger = ["webrender/debugger"]
+
 [dependencies]
 stylish = { path = "../" }
 gleam = "0.4.3"
@@ -16,6 +19,6 @@ image = "0.13.0"
 
 [dependencies.webrender]
 git = "https://github.com/servo/webrender"
-rev = "101c69db1a989fe89c308dabd53cf50aedfe4a96"
+rev = "6cc2c6a4bd5ad0d3544b1568d02848efb29ca255"
 default-features = false
 features = [ "freetype-lib" ]

@@ -70,6 +70,7 @@ type FontMap = Rc<RefCell<HashMap<String, Font>>>;
 struct Font {
     key: FontKey,
     info: stb_truetype::FontInfo<Vec<u8>>,
+    instances: HashMap<app_units::Au, FontInstanceKey>,
 }
 
 impl <A: Assets + 'static> WebRenderer<A> {
@@ -224,7 +225,8 @@ impl <A: Assets + 'static> WebRenderer<A> {
                 DeviceUintRect::new(
                     DeviceUintPoint::zero(),
                     size,
-                )
+                ),
+                1.0
             );
             self.api.set_display_list(
                 self.document,
@@ -238,7 +240,7 @@ impl <A: Assets + 'static> WebRenderer<A> {
             self.api.generate_frame(self.document, None);
         }
 
-        self.renderer.as_mut().unwrap().render(size);
+        self.renderer.as_mut().unwrap().render(size).unwrap();
         self.skip_build = false;
     }
 }
@@ -265,7 +267,7 @@ pub struct Info {
 #[derive(Debug)]
 struct Text {
     glyphs: Vec<GlyphInstance>,
-    font: FontKey,
+    font: FontInstanceKey,
     size: i32,
     color: ColorF,
 }
@@ -295,6 +297,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
             LayoutPoint::new(obj.draw_rect.x as f32 + offset.x, obj.draw_rect.y as f32 + offset.y),
             LayoutSize::new(width, height),
         );
+        let pinfo = PrimitiveInfo::new(rect);
 
         if obj.render_info.is_none() {
             let text = if let (Some(txt), Some(font)) = (obj.text.as_ref(), obj.get_value::<String>("font")) {
@@ -309,6 +312,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                             Some(v.insert(Font {
                                 key: key,
                                 info: info,
+                                instances: HashMap::new(),
                             }))
                         } else { None }
                     },
@@ -325,16 +329,28 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         obj.text_splits.push((0, txt.len(), obj.draw_rect));
                     }
 
+                    let font_size = app_units::Au::from_f64_px(size as f64 * 0.8);
+                    let api = &mut self.api;
+                    let resources = &mut self.resources;
+                    let font_key = finfo.key;
+                    let font_instance = finfo.instances.entry(font_size)
+                        .or_insert_with(|| {
+                            let key = api.generate_font_instance_key();
+                            resources.add_font_instance(key, font_key, font_size, None, None, vec![]);
+                            key
+                        });
+
+                    let font_info = &finfo.info;
+
                     let scale = finfo.info.scale_for_pixel_height(size as f32);
                     let glyphs = obj.text_splits.iter()
                         .flat_map(|&(s, e, rect)| {
                             let rect = rect;
-                            let finfo = &finfo;
                             txt[s..e].chars()
                                 .scan((0.0, None), move |state, v| {
-                                    let index = finfo.info.find_glyph_index(v as u32);
+                                    let index = font_info.find_glyph_index(v as u32);
                                     let g_size = if let Some(last) = state.1 {
-                                        let kern = finfo.info.get_glyph_kern_advance(last, index);
+                                        let kern = font_info.get_glyph_kern_advance(last, index);
                                         kern as f32 * scale
                                     } else {
                                         0.0
@@ -342,7 +358,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                                     state.1 = Some(index);
 
                                     let pos = state.0 + g_size;
-                                    state.0 += g_size + finfo.info.get_glyph_h_metrics(index).advance_width as f32 * scale;
+                                    state.0 += g_size + font_info.get_glyph_h_metrics(index).advance_width as f32 * scale;
 
                                     Some(GlyphInstance {
                                         index: index,
@@ -356,7 +372,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         .collect();
                     Some(Text {
                         glyphs: glyphs,
-                        font: finfo.key,
+                        font: *font_instance,
                         size: size,
                         color: color,
                     })
@@ -455,11 +471,11 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
         if !info.filters.is_empty() {
             self.builder.push_stacking_context(
-                ScrollPolicy::Scrollable,
-                LayoutRect::new(
+                &PrimitiveInfo::new(LayoutRect::new(
                     LayoutPoint::zero(),
                     LayoutSize::zero(),
-                ),
+                )),
+                ScrollPolicy::Scrollable,
                 None,
                 TransformStyle::Flat,
                 None,
@@ -469,13 +485,13 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         }
 
         if let Some(key) = info.image {
-            self.builder.push_image(rect, None, rect.size, LayoutSize::zero(), ImageRendering::Auto, key);
+            self.builder.push_image(&pinfo, rect.size, LayoutSize::zero(), ImageRendering::Auto, key);
         }
 
         if let Some(col) = info.background_color.as_ref() {
             match *col {
                 Color::Solid(col) => {
-                    self.builder.push_rect(rect, None, col);
+                    self.builder.push_rect(&pinfo, col);
                 },
                 Color::Gradient{angle, ref stops} => {
                     let len = width.max(height) / 2.0;
@@ -489,7 +505,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         ExtendMode::Clamp,
                     );
                     self.builder.push_gradient(
-                        rect, None,
+                        &pinfo,
                         g,
                         LayoutSize::new(width, height),
                         LayoutSize::zero(),
@@ -500,8 +516,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
         if let Some(border) = info.border {
             self.builder.push_border(
-                rect,
-                None,
+                &pinfo,
                 info.border_widths,
                 border,
             );
@@ -512,19 +527,17 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 let shadow_rect = rect
                     .translate(&ts.offset)
                     .inflate(ts.blur_radius, ts.blur_radius);
-                self.builder.push_text_shadow(shadow_rect, None, TextShadow {
+                self.builder.push_text_shadow(&PrimitiveInfo::new(shadow_rect), TextShadow {
                     offset: ts.offset,
                     color: ts.color,
                     blur_radius: ts.blur_radius,
                 });
             }
             self.builder.push_text(
-                rect,
-                None,
+                &pinfo,
                 &txt.glyphs,
                 txt.font,
                 txt.color,
-                app_units::Au::from_f64_px(txt.size as f64 * 0.8),
                 None
             );
             if info.text_shadow.is_some() {
@@ -534,8 +547,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
         for shadow in &info.shadows {
             self.builder.push_box_shadow(
-                rect,
-                Some(LocalClip::Rect(rect.inflate(shadow.blur_radius, shadow.blur_radius)
+                &PrimitiveInfo::with_clip(rect, LocalClip::Rect(rect.inflate(shadow.blur_radius, shadow.blur_radius)
                     .translate(&shadow.offset))),
                 rect,
                 shadow.offset,

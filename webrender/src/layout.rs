@@ -1,5 +1,6 @@
 
 use std::rc::Rc;
+use std::collections::HashMap;
 use stb_truetype;
 use webrender::api::{ResourceUpdates, RenderApi};
 use stylish::{Rect, LayoutEngine, RenderObject};
@@ -89,6 +90,7 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
                             Some(v.insert(Font {
                                 key: key,
                                 info: info,
+                                instances: HashMap::new(),
                             }))
                         } else { None }
                     },
