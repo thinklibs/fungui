@@ -199,7 +199,7 @@ dragable(x=x, y=y) {
     height = 16,
 
     filters = filters(
-        "hue_rotate", (x / parent_width) * 3.14,
+        "hue_rotate", (x / parent_width) * 360.0,
         "brightness", 1.0 - (y / parent_height)),
 }
 dragable > @text {

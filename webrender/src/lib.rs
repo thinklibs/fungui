@@ -109,9 +109,8 @@ impl <A: Assets + 'static> WebRenderer<A> {
             clear_framebuffer: false,
             .. Default::default()
         };
-        let (renderer, sender) = webrender::Renderer::new(gl, options).unwrap();
+        let (renderer, sender) = webrender::Renderer::new(gl, Box::new(Dummy),options).unwrap();
         let api = sender.create_api();
-        renderer.set_render_notifier(Box::new(Dummy));
         let document = api.add_document(DeviceUintSize::new(800, 480));
 
         let pipeline = PipelineId(0, 0);
@@ -249,7 +248,7 @@ impl <A: Assets + 'static> WebRenderer<A> {
 pub struct Info {
     background_color: Option<Color>,
     image: Option<ImageKey>,
-    shadows: Vec<Shadow>,
+    shadows: Vec<shadow::Shadow>,
 
     text: Option<Text>,
     text_shadow: Option<TShadow>,
@@ -416,10 +415,10 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 background_color: Color::get(obj, "background_color"),
                 image: obj.get_value::<String>("image")
                     .and_then(|v| load_image(v)),
-                shadows: obj.get_custom_value::<Shadow>("shadow")
+                shadows: obj.get_custom_value::<shadow::Shadow>("shadow")
                     .cloned()
                     .map(|v| vec![v])
-                    .or_else(|| obj.get_custom_value::<Vec<Shadow>>("shadow")
+                    .or_else(|| obj.get_custom_value::<Vec<shadow::Shadow>>("shadow")
                         .cloned())
                     .unwrap_or_else(Vec::new),
                 text: text,
@@ -527,7 +526,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 let shadow_rect = rect
                     .translate(&ts.offset)
                     .inflate(ts.blur_radius, ts.blur_radius);
-                self.builder.push_text_shadow(&PrimitiveInfo::new(shadow_rect), TextShadow {
+                self.builder.push_shadow(&PrimitiveInfo::new(shadow_rect), Shadow {
                     offset: ts.offset,
                     color: ts.color,
                     blur_radius: ts.blur_radius,
@@ -541,7 +540,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 None
             );
             if info.text_shadow.is_some() {
-                self.builder.pop_text_shadow();
+                self.builder.pop_all_shadows();
             }
         }
 
@@ -554,7 +553,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 shadow.color,
                 shadow.blur_radius,
                 shadow.spread_radius,
-                0.0,
+                BorderRadius::zero(),
                 shadow.clip_mode,
             );
         }
@@ -584,9 +583,13 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
 struct Dummy;
 impl RenderNotifier for Dummy {
-    fn new_frame_ready(&mut self) {
+    fn new_frame_ready(&self) {
     }
 
-    fn new_scroll_frame_ready(&mut self, _composite_needed: bool) {
+    fn new_scroll_frame_ready(&self, _composite_needed: bool) {
+    }
+
+    fn clone(&self) -> Box<RenderNotifier> {
+        Box::new(Dummy)
     }
 }

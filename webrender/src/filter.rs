@@ -26,6 +26,7 @@ pub fn filters(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> 
         let filter = pair.get(0)
             .and_then(|v| v.get_value::<String>())
             .map(|v| match v.as_ref() {
+                "blur" => Ok(FilterOp::Blur(op)),
                 "brightness" => Ok(FilterOp::Brightness(op)),
                 "contrast" => Ok(FilterOp::Contrast(op)),
                 "grayscale" => Ok(FilterOp::Grayscale(op)),
