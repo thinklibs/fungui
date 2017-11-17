@@ -1,15 +1,17 @@
 [package]
+authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
 name = "stylish"
 version = "0.1.0"
-authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
+
+[dependencies]
+error-chain = "0.11.0"
+fnv = "1.0.6"
+
+[dependencies.stylish_syntax]
+path = "./syntax"
 
 [workspace]
 members = [
     "./syntax",
-    "./webrender"
+    "./webrender",
 ]
-
-[dependencies]
-stylish_syntax = { path = "./syntax" }
-error-chain = "0.11.0"
-fnv = "1.0.5"

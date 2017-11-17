@@ -1,8 +1,8 @@
 [package]
+authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
 name = "stylish_syntax"
 version = "0.1.0"
-authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
 
 [dependencies]
-combine = "2.3.2"
-fnv = "1.0.5"
+combine = "2.5.2"
+fnv = "1.0.6"
