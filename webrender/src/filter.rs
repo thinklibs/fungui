@@ -32,10 +32,7 @@ pub fn filters(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> 
                 "grayscale" => Ok(FilterOp::Grayscale(op)),
                 "hue_rotate" => Ok(FilterOp::HueRotate(op)),
                 "invert" => Ok(FilterOp::Invert(op)),
-
-                /// TODO: Review this, seems to have something to do with animation?
                 "opacity" => Ok(FilterOp::Opacity(PropertyBinding::Value(op), op)),
-
                 "saturate" => Ok(FilterOp::Saturate(op)),
                 "sepia" => Ok(FilterOp::Sepia(op)),
                 _ => Err(ErrorKind::Msg("Invalid filter".into())),
@@ -45,6 +42,10 @@ pub fn filters(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> 
 
         filters.push(filter);
     }
+    
+    // TODO: Investigate why the filter order needs to be reversed after the
+    // webrender upgrade.
+    filters.reverse();
 
     Ok(stylish::Value::Any(Box::new(Filters(filters))))
 }

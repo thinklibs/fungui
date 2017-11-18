@@ -46,7 +46,7 @@ type WResult<T> = Result<T, Box<Error>>;
 ///                        in decimal 0-255.
 pub struct WebRenderer<A> {
     assets: Rc<A>,
-    renderer: Option<Renderer<'static>>, // TODO: Review lifetime. I'm getting unexpected borrowing errors for manager if declaring 'a on WebRenderer and using it here.
+    renderer: Option<Renderer<'static>>,
     api: RenderApi,
     document: DocumentId,
     frame_id: Epoch,
