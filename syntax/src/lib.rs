@@ -6,9 +6,9 @@ pub mod desc;
 pub mod style;
 
 
-use combine::{Stream, ParseError, State};
-use combine::primitives::{Error, SourcePosition, Info};
-use std::io::{Write, self};
+use combine::{ParseError, State, Stream};
+use combine::primitives::{Error, Info, SourcePosition};
+use std::io::{self, Write};
 use std::hash::{Hash, Hasher};
 use std::fmt::{self, Display, Formatter};
 
@@ -38,7 +38,8 @@ impl Eq for Ident {}
 
 impl Hash for Ident {
     fn hash<H>(&self, state: &mut H)
-        where H: Hasher
+    where
+        H: Hasher,
     {
         self.name.hash(state);
     }
@@ -77,25 +78,52 @@ impl Display for Position {
 }
 
 /// Formats the error in a user friendly format
-pub fn format_error<'a, I, W>(mut w: W, source: I, pos: Position, len: usize, msg: &str, label: &str) -> io::Result<()>
-    where W: Write,
-          I: Iterator<Item=&'a str>
+pub fn format_error<'a, I, W>(
+    mut w: W,
+    source: I,
+    pos: Position,
+    len: usize,
+    msg: &str,
+    label: &str,
+) -> io::Result<()>
+where
+    W: Write,
+    I: Iterator<Item = &'a str>,
 {
     use std::cmp::max;
     let number_len = (pos.line_number + 1).to_string().len();
     write!(&mut w, "error: {}\n", msg)?;
-    write!(&mut w, "{:width$}--> {}:{}\n", "", pos.line_number, pos.column, width = number_len, )?;
+    write!(
+        &mut w,
+        "{:width$}--> {}:{}\n",
+        "",
+        pos.line_number,
+        pos.column,
+        width = number_len,
+    )?;
     let skip = max(0, pos.line_number - 2) as usize;
     let take = if pos.line_number == 1 {
         write!(&mut w, "{:width$} |\n", "", width = number_len)?;
         2
-    } else { 3 };
+    } else {
+        3
+    };
 
     for (no, line) in source.enumerate().skip(skip).take(take) {
         let target_line = no == (pos.line_number - 1) as usize;
         if target_line {
             write!(&mut w, "{:width$} | {}\n", no + 1, line, width = number_len)?;
-            write!(&mut w, "{:width$} | {:offset$}{:^<len$} {}\n", "", "", "", label, width = number_len, offset = pos.column as usize - 1, len = len)?;
+            write!(
+                &mut w,
+                "{:width$} | {:offset$}{:^<len$} {}\n",
+                "",
+                "",
+                "",
+                label,
+                width = number_len,
+                offset = pos.column as usize - 1,
+                len = len
+            )?;
         } else {
             write!(&mut w, "{:width$} | {}\n", "", line, width = number_len)?;
         }
@@ -106,10 +134,15 @@ pub fn format_error<'a, I, W>(mut w: W, source: I, pos: Position, len: usize, ms
 /// Formats a parsing error using [`format_error`].
 ///
 /// [`format_error`]: fn.format_error.html
-pub fn format_parse_error<'a, I, W, S>(w: W, source: I, err: ParseError<S>) -> Result<(), Box<::std::error::Error>>
-    where W: Write,
-          I: Iterator<Item=&'a str>,
-          S: Stream<Item=char, Position=SourcePosition>
+pub fn format_parse_error<'a, I, W, S>(
+    w: W,
+    source: I,
+    err: ParseError<S>,
+) -> Result<(), Box<::std::error::Error>>
+where
+    W: Write,
+    I: Iterator<Item = &'a str>,
+    S: Stream<Item = char, Position = SourcePosition>,
 {
     use std::fmt::Write;
     let mut msg = String::new();
@@ -124,7 +157,9 @@ pub fn format_parse_error<'a, I, W, S>(w: W, source: I, err: ParseError<S>) -> R
             Error::Unexpected(..) => Type::Unexpected,
             _ => Type::Message,
         }
-    } else { Type::Unknown };
+    } else {
+        Type::Unknown
+    };
 
     let mut token_len = 1;
 
@@ -139,7 +174,6 @@ pub fn format_parse_error<'a, I, W, S>(w: W, source: I, err: ParseError<S>) -> R
                 },
                 Error::Other(ref err) => write!(&mut msg, "{}", err)?,
                 _ => unimplemented!(),
-
             }
         },
         Type::Unexpected => {
@@ -152,16 +186,16 @@ pub fn format_parse_error<'a, I, W, S>(w: W, source: I, err: ParseError<S>) -> R
                             msg.push_str(m);
                             label.push_str(m);
                             token_len = m.len();
-                        },
+                        }
                         Info::Borrowed(m) => {
                             msg.push_str(m);
                             label.push_str(m);
                             token_len = m.len();
-                        },
+                        }
                         Info::Token(t) => {
                             write!(&mut msg, "{}", t)?;
                             write!(&mut label, "{}", t)?;
-                        },
+                        }
                         _ => unimplemented!(),
                     },
                     _ => unimplemented!(),
@@ -179,16 +213,16 @@ pub fn format_parse_error<'a, I, W, S>(w: W, source: I, err: ParseError<S>) -> R
                     Error::Expected(ref m) => match *m {
                         Info::Owned(ref m) => {
                             msg.push_str(m);
-                        },
+                        }
                         Info::Borrowed(m) => {
                             msg.push_str(m);
-                        },
+                        }
                         Info::Token(t) => {
                             write!(&mut msg, "{}", t)?;
-                        },
+                        }
                         _ => unimplemented!(),
                     },
-                    _ => {},
+                    _ => {}
                 }
                 msg.push('\'');
                 if (i as isize) < len - 2 {

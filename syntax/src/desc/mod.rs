@@ -32,12 +32,9 @@
 use fnv::FnvHashMap;
 
 use combine::*;
-use combine::char::{char, digit, alpha_num, spaces, string, space};
+use combine::char::{alpha_num, char, digit, space, spaces, string};
 use combine::primitives::{Error, SourcePosition};
-use super::{
-    Ident,
-    Position,
-};
+use super::{Ident, Position};
 
 /// A UI description document
 ///
@@ -129,26 +126,23 @@ pub enum Value {
 }
 
 fn parse_document<I>(input: I) -> ParseResult<Document, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
     spaces()
         .with(parser(parse_element))
-        .map(|e| Document{root: e})
+        .map(|e| Document { root: e })
         .parse_stream(input)
 }
 
 fn parse_element<I>(input: I) -> ParseResult<Element, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
     let comments = skip_many(parser(skip_comment));
 
     let element = (
-        parser(ident).skip(look_ahead(
-            char('{')
-                .or(char('('))
-                .or(space())
-                .map(|_| ())
-        )),
+        parser(ident).skip(look_ahead(char('{').or(char('(')).or(space()).map(|_| ()))),
         spaces().with(optional(parser(properties))),
         spaces().with(optional(parser(body))),
     );
@@ -156,58 +150,75 @@ fn parse_element<I>(input: I) -> ParseResult<Element, I>
     spaces()
         .with(comments)
         .with(element)
-        .map(|v| Element{
-            name: v.0,
-            properties: v.1.unwrap_or_default(),
-            nodes: v.2.unwrap_or_default(),
+        .map(|v| {
+            Element {
+                name: v.0,
+                properties: v.1.unwrap_or_default(),
+                nodes: v.2.unwrap_or_default(),
+            }
         })
         .parse_stream(input)
 }
 
 fn ident<I>(input: I) -> ParseResult<Ident, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
     (position(), many1(alpha_num().or(char('_'))))
-        .map(|(pos, name): (_, String)| Ident {
-            name: name,
-            position: SourcePosition::into(pos),
+        .map(|(pos, name): (_, String)| {
+            Ident {
+                name: name,
+                position: SourcePosition::into(pos),
+            }
         })
         .parse_stream(input)
 }
 
 fn body<I>(input: I) -> ParseResult<Vec<Node>, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
-
     let (_, mut input) = try!(char('{').parse_lazy(input).into());
 
     let mut nodes = Vec::new();
     loop {
-        match input.clone().combine(|input| spaces().with(char('}')).parse_lazy(input).into()) {
+        match input
+            .clone()
+            .combine(|input| spaces().with(char('}')).parse_lazy(input).into())
+        {
             Ok(i) => {
                 input = i.1;
                 break;
-            },
+            }
             Err(_) => {}
         };
 
-        match input.clone().combine(|input| spaces().with(parser(skip_comment)).parse_lazy(input).into()) {
+        match input.clone().combine(|input| {
+            spaces().with(parser(skip_comment)).parse_lazy(input).into()
+        }) {
             Ok(i) => {
                 input = i.1;
                 continue;
-            },
+            }
             Err(_) => {}
         };
 
-        let (node, i) = try!(input.combine(|input| spaces()
+        let (node, i) = try!(input.combine(|input| {
+            spaces()
                 .with(skip_many(parser(skip_comment)))
                 .with(
-                    (position(), parser(parse_string), optional(parser(properties)))
-                        .map(|v| Node::Text(v.1, SourcePosition::into(v.0), v.2.unwrap_or_default()))
-                        .or(parser(parse_element).map(Node::Element))
+                    (
+                        position(),
+                        parser(parse_string),
+                        optional(parser(properties)),
+                    ).map(|v| {
+                            Node::Text(v.1, SourcePosition::into(v.0), v.2.unwrap_or_default())
+                        })
+                        .or(parser(parse_element).map(Node::Element)),
                 )
                 .parse_lazy(input)
-                .into()));
+                .into()
+        }));
         input = i;
         nodes.push(node);
     }
@@ -215,60 +226,54 @@ fn body<I>(input: I) -> ParseResult<Vec<Node>, I>
 }
 
 fn properties<I>(input: I) -> ParseResult<FnvHashMap<Ident, ValueType>, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
     let properties = (
         token('('),
         sep_end_by(parser(property), token(',')),
-        spaces().with(token(')'))
+        spaces().with(token(')')),
     );
-    properties
-        .map(|(_, l, _)| l)
-        .parse_stream(input)
+    properties.map(|(_, l, _)| l).parse_stream(input)
 }
 
 fn property<I>(input: I) -> ParseResult<(Ident, ValueType), I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
     let prop = (
         spaces().with(parser(ident)),
         spaces().with(token('=')),
         spaces().with(parser(value)),
     );
-    prop
-        .map(|v| (v.0, v.2))
-        .parse_stream(input)
+    prop.map(|v| (v.0, v.2)).parse_stream(input)
 }
 
 fn value<I>(input: I) -> ParseResult<ValueType, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
-    let boolean = parser(parse_bool)
-        .map(|v| Value::Boolean(v));
-    let float = parser(parse_float)
-        .map(|v| Value::Float(v));
-    let integer = parser(parse_integer)
-        .map(|v| Value::Integer(v));
+    let boolean = parser(parse_bool).map(|v| Value::Boolean(v));
+    let float = parser(parse_float).map(|v| Value::Float(v));
+    let integer = parser(parse_integer).map(|v| Value::Integer(v));
 
-    let string = parser(parse_string)
-        .map(|v| Value::String(v));
+    let string = parser(parse_string).map(|v| Value::String(v));
 
     (
         position(),
-        try(boolean)
-            .or(try(float))
-            .or(try(integer))
-            .or(string)
-    )
-        .map(|v| ValueType {
-            value: v.1,
-            position: SourcePosition::into(v.0),
+        try(boolean).or(try(float)).or(try(integer)).or(string),
+    ).map(|v| {
+            ValueType {
+                value: v.1,
+                position: SourcePosition::into(v.0),
+            }
         })
         .parse_stream(input)
 }
 
 fn parse_bool<I>(input: I) -> ParseResult<bool, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
     let (t, input) = try!(optional(string("true")).parse_lazy(input).into());
     if t.is_some() {
@@ -279,7 +284,8 @@ fn parse_bool<I>(input: I) -> ParseResult<bool, I>
 }
 
 fn parse_float<I>(input: I) -> ParseResult<f64, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
     let mut buf = String::new();
 
@@ -288,26 +294,30 @@ fn parse_float<I>(input: I) -> ParseResult<f64, I>
         buf.push(s);
     }
 
-    let (val, input): (String, _) = try!(input.combine(|input| many1(digit()).parse_lazy(input).into()));
+    let (val, input): (String, _) =
+        try!(input.combine(|input| many1(digit()).parse_lazy(input).into()));
     buf.push_str(&val);
-    let (val, input): (String, _) = try!(input.combine(|input|
-        char('.')
-            .with(many1(digit()))
-            .parse_lazy(input).into()
-    ));
+    let (val, input): (String, _) = try!(input.combine(|input| {
+        char('.').with(many1(digit())).parse_lazy(input).into()
+    }));
     buf.push('.');
     buf.push_str(&val);
 
     let val: f64 = match buf.parse() {
         Ok(val) => val,
-        Err(err) => return Err(input.map(|input| ParseError::new(input.position(), Error::Other(err.into())))),
+        Err(err) => {
+            return Err(input.map(|input| {
+                ParseError::new(input.position(), Error::Other(err.into()))
+            }))
+        }
     };
 
     Ok((val, input))
 }
 
 fn parse_integer<I>(input: I) -> ParseResult<i32, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
     let mut buf = String::new();
 
@@ -316,19 +326,25 @@ fn parse_integer<I>(input: I) -> ParseResult<i32, I>
         buf.push(s);
     }
 
-    let (val, input): (String, _) = try!(input.combine(|input| many1(digit()).parse_lazy(input).into()));
+    let (val, input): (String, _) =
+        try!(input.combine(|input| many1(digit()).parse_lazy(input).into()));
     buf.push_str(&val);
 
     let val: i32 = match buf.parse() {
         Ok(val) => val,
-        Err(err) => return Err(input.map(|input| ParseError::new(input.position(), Error::Other(err.into())))),
+        Err(err) => {
+            return Err(input.map(|input| {
+                ParseError::new(input.position(), Error::Other(err.into()))
+            }))
+        }
     };
 
     Ok((val, input))
 }
 
 fn parse_string<I>(input: I) -> ParseResult<String, I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
     (
         token('"'),
@@ -338,16 +354,16 @@ fn parse_string<I>(input: I) -> ParseResult<String, I>
                 .or(try(string(r#"\n"#).map(|_| '\n')))
                 .or(try(string(r#"\r"#).map(|_| '\r')))
                 .or(try(string(r#"\\"#).map(|_| '\\')))
-                .or(satisfy(|c| c != '"'))
+                .or(satisfy(|c| c != '"')),
         ),
         token('"'),
-    )
-        .map(|v| v.1)
+    ).map(|v| v.1)
         .parse_stream(input)
 }
 
 fn skip_comment<I>(input: I) -> ParseResult<(), I>
-    where I: Stream<Item=char, Position=SourcePosition>
+where
+    I: Stream<Item = char, Position = SourcePosition>,
 {
     string("//")
         .with(skip_many(satisfy(|c| c != '\n')))
@@ -358,7 +374,7 @@ fn skip_comment<I>(input: I) -> ParseResult<(), I>
 
 #[cfg(test)]
 mod tests {
-    use ::format_parse_error;
+    use format_parse_error;
     use super::*;
     #[test]
     fn test() {
@@ -403,14 +419,18 @@ root(
             let mut out: Vec<u8> = Vec::new();
             format_parse_error(&mut out, source.lines(), err).unwrap();
             assert_eq!(
-                String::from_utf8_lossy(&out).lines().map(|v| v.trim_right().to_owned() + "\n").collect::<String>(),
-r#"error: Unexpected '$' expected either '{', '(' or 'whitespace'
+                String::from_utf8_lossy(&out)
+                    .lines()
+                    .map(|v| v.trim_right().to_owned() + "\n")
+                    .collect::<String>(),
+                r#"error: Unexpected '$' expected either '{', '(' or 'whitespace'
  --> 1:4
   |
 1 | roo$t {
   |    ^ Unexpected '$'
   |
-"#);
+"#
+            );
         } else {
             panic!("Expected error");
         }

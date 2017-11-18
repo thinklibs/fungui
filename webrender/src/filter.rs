@@ -20,8 +20,7 @@ pub fn filters(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> 
         }
         let op = pair.get(1)
             .and_then(|v| v.get_value::<f64>())
-            .ok_or_else(|| ErrorKind::IncorrectType("op value", "float"))?
-            as f32;
+            .ok_or_else(|| ErrorKind::IncorrectType("op value", "float"))? as f32;
 
         let filter = pair.get(0)
             .and_then(|v| v.get_value::<String>())
@@ -42,7 +41,7 @@ pub fn filters(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> 
 
         filters.push(filter);
     }
-    
+
     // TODO: Investigate why the filter order needs to be reversed after the
     // webrender upgrade.
     filters.reverse();

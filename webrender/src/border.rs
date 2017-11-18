@@ -16,20 +16,24 @@ impl stylish::CustomValue for BorderWidthInfo {
 }
 
 pub fn border_width(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
-    let left = params.get(0)
+    let left = params
+        .get(0)
         .ok_or_else(|| ErrorKind::MissingParameter("left/width"))?
         .get_value::<f64>()
         .ok_or_else(|| ErrorKind::IncorrectType("left/width", "float"))?;
 
-    let top = params.get(1)
+    let top = params
+        .get(1)
         .unwrap_or(&stylish::Value::Float(left))
         .get_value::<f64>()
         .ok_or_else(|| ErrorKind::IncorrectType("top", "float"))?;
-    let right = params.get(2)
+    let right = params
+        .get(2)
         .unwrap_or(&stylish::Value::Float(left))
         .get_value::<f64>()
         .ok_or_else(|| ErrorKind::IncorrectType("right", "float"))?;
-    let bottom = params.get(3)
+    let bottom = params
+        .get(3)
         .unwrap_or(&stylish::Value::Float(top))
         .get_value::<f64>()
         .ok_or_else(|| ErrorKind::IncorrectType("bottom", "float"))?;
@@ -40,7 +44,7 @@ pub fn border_width(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Va
             top: top as f32,
             right: right as f32,
             bottom: bottom as f32,
-        }
+        },
     })))
 }
 
@@ -57,7 +61,7 @@ pub enum Border {
         patch: NinePatchDescriptor,
         repeat: RepeatMode,
         fill: bool,
-    }
+    },
 }
 
 impl stylish::CustomValue for Border {
@@ -76,22 +80,26 @@ impl stylish::CustomValue for BSide {
 }
 
 pub fn border(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
-    let left = params.get(0)
+    let left = params
+        .get(0)
         .ok_or_else(|| ErrorKind::MissingParameter("left/width"))?
         .get_custom_value::<BSide>()
         .map(|v| v.0)
         .ok_or_else(|| ErrorKind::IncorrectType("left/width", "border side"))?;
 
-    let top = params.get(1)
+    let top = params
+        .get(1)
         .and_then(|v| v.get_custom_value::<BSide>())
         .map(|v| v.0)
         .unwrap_or(left);
 
-    let right = params.get(2)
+    let right = params
+        .get(2)
         .and_then(|v| v.get_custom_value::<BSide>())
         .map(|v| v.0)
         .unwrap_or(left);
-    let bottom = params.get(3)
+    let bottom = params
+        .get(3)
         .and_then(|v| v.get_custom_value::<BSide>())
         .map(|v| v.0)
         .unwrap_or(top);
@@ -107,21 +115,25 @@ pub fn border(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
 
 pub fn border_image(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
     use euclid;
-    let image = params.get(0)
+    let image = params
+        .get(0)
         .ok_or_else(|| ErrorKind::MissingParameter("image"))?
         .get_value::<String>()
         .ok_or_else(|| ErrorKind::IncorrectType("image", "string"))?;
 
-    let pwidth = params.get(1)
+    let pwidth = params
+        .get(1)
         .ok_or_else(|| ErrorKind::MissingParameter("width"))?
         .get_value::<i32>()
         .ok_or_else(|| ErrorKind::IncorrectType("width", "integer"))?;
 
-    let pheight = params.get(2)
+    let pheight = params
+        .get(2)
         .and_then(|v| v.get_value::<i32>())
         .unwrap_or(pwidth);
 
-    let repeat = params.get(3)
+    let repeat = params
+        .get(3)
         .and_then(|v| v.get_value::<String>())
         .map(|v| match v.as_ref() {
             "stretch" => RepeatMode::Stretch,
@@ -131,7 +143,8 @@ pub fn border_image(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Va
         })
         .unwrap_or(RepeatMode::Repeat);
 
-    let fill = params.get(4)
+    let fill = params
+        .get(4)
         .and_then(|v| v.get_value::<bool>())
         .unwrap_or(false);
 
@@ -140,7 +153,12 @@ pub fn border_image(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Va
         patch: NinePatchDescriptor {
             width: pwidth as u32 * 3,
             height: pheight as u32 * 3,
-            slice: euclid::SideOffsets2D::new(pheight as u32, pwidth as u32, pheight as u32, pwidth as u32), // TODO: eh?
+            slice: euclid::SideOffsets2D::new(
+                pheight as u32,
+                pwidth as u32,
+                pheight as u32,
+                pwidth as u32,
+            ), // TODO: eh?
         },
         repeat: repeat,
         fill: fill,
@@ -148,10 +166,12 @@ pub fn border_image(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Va
 }
 
 pub fn border_side(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
-    let color = Color::get_val(params.get(0)
+    let color = Color::get_val(params
+        .get(0)
         .ok_or_else(|| ErrorKind::MissingParameter("color"))?)
         .ok_or_else(|| ErrorKind::IncorrectType("color", "color"))?;
-    let style = params.get(1)
+    let style = params
+        .get(1)
         .and_then(|v| v.get_value::<String>())
         .unwrap_or_else(|| "solid".to_owned());
 
@@ -169,7 +189,7 @@ pub fn border_side(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Val
                 "inset" => BorderStyle::Inset,
                 "outset" => BorderStyle::Outset,
                 _ => BorderStyle::None,
-            }
+            },
         }))))
     } else {
         Err(ErrorKind::Msg("Only solid colors can be used in a normal border".into()).into())

@@ -2,14 +2,9 @@
 use std::rc::Rc;
 use std::collections::HashMap;
 use stb_truetype;
-use webrender::api::{ResourceUpdates, RenderApi};
-use stylish::{Rect, LayoutEngine, RenderObject};
-use super::{
-    Info,
-    FontMap,
-    Font,
-    Assets,
-};
+use webrender::api::{RenderApi, ResourceUpdates};
+use stylish::{LayoutEngine, Rect, RenderObject};
+use super::{Assets, Font, FontMap, Info};
 
 pub(crate) struct Lined<A> {
     api: RenderApi,
@@ -23,8 +18,13 @@ pub(crate) struct Lined<A> {
     width: i32,
 }
 
-impl <A: Assets> Lined<A> {
-    pub(crate) fn new(obj: &RenderObject<Info>, api: RenderApi, fonts: FontMap, assets: Rc<A>) -> Lined<A> {
+impl<A: Assets> Lined<A> {
+    pub(crate) fn new(
+        obj: &RenderObject<Info>,
+        api: RenderApi,
+        fonts: FontMap,
+        assets: Rc<A>,
+    ) -> Lined<A> {
         let height = obj.get_value::<i32>("line_height").unwrap_or(16);
         Lined {
             api: api,
@@ -40,7 +40,7 @@ impl <A: Assets> Lined<A> {
     }
 }
 
-impl <A: Assets> LayoutEngine<Info> for Lined<A> {
+impl<A: Assets> LayoutEngine<Info> for Lined<A> {
     fn pre_position_child(&mut self, obj: &mut RenderObject<Info>, _parent: &RenderObject<Info>) {
         if obj.text.is_some() {
             // Handled in post
@@ -54,13 +54,11 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
         let h = self.line_height;
         obj.max_size.1 = Some(h);
         obj.max_size.0 = Some(w);
-        let mut width = obj.get_value::<i32>("width")
-            .unwrap_or(w);
+        let mut width = obj.get_value::<i32>("width").unwrap_or(w);
         if width > w {
             width = w;
         }
-        let mut height = obj.get_value::<i32>("height")
-            .unwrap_or(h);
+        let mut height = obj.get_value::<i32>("height").unwrap_or(h);
         if height > h {
             height = h;
         }
@@ -80,19 +78,19 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
                 let mut fonts = self.fonts.borrow_mut();
                 let finfo = match fonts.entry(font) {
                     Entry::Occupied(v) => Some(v.into_mut()),
-                    Entry::Vacant(v) => {
-                        if let Some(data) = self.assets.load_font(v.key()) {
-                            let info = stb_truetype::FontInfo::new(data.clone(), 0).unwrap();
-                            let key = self.api.generate_font_key();
-                            let mut resources = ResourceUpdates::new();
-                            resources.add_raw_font(key, data, 0);
-                            self.api.update_resources(resources);
-                            Some(v.insert(Font {
-                                key: key,
-                                info: info,
-                                instances: HashMap::new(),
-                            }))
-                        } else { None }
+                    Entry::Vacant(v) => if let Some(data) = self.assets.load_font(v.key()) {
+                        let info = stb_truetype::FontInfo::new(data.clone(), 0).unwrap();
+                        let key = self.api.generate_font_key();
+                        let mut resources = ResourceUpdates::new();
+                        resources.add_raw_font(key, data, 0);
+                        self.api.update_resources(resources);
+                        Some(v.insert(Font {
+                            key: key,
+                            info: info,
+                            instances: HashMap::new(),
+                        }))
+                    } else {
+                        None
                     },
                 };
                 if let Some(finfo) = finfo {
@@ -121,19 +119,22 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
                             0.0
                         };
 
-                        let size = (offset + finfo.info.get_glyph_h_metrics(index).advance_width as f32) * scale;
+                        let size = (offset
+                            + finfo.info.get_glyph_h_metrics(index).advance_width as f32)
+                            * scale;
                         last_glyph = Some(index);
 
                         if current_size + word_size + size > self.remaining as f32 || c == '\n' {
                             // Split at word
                             obj.text_splits.push((
-                                current.0, current.1,
+                                current.0,
+                                current.1,
                                 Rect {
                                     x: self.width - self.remaining,
                                     y: self.line * self.line_height,
                                     width: current_size.ceil() as i32,
                                     height: self.line_height,
-                                }
+                                },
                             ));
                             current.0 = word.0;
                             current.1 = word.0;
@@ -150,20 +151,20 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
                         } else {
                             word_size += size;
                         }
-
                     }
                     // Add the remaining
                     current.1 = txt.len();
                     current_size += word_size;
                     let width = current_size.ceil() as i32;
                     obj.text_splits.push((
-                        current.0, current.1,
+                        current.0,
+                        current.1,
                         Rect {
                             x: self.width - self.remaining,
                             y: self.line * self.line_height,
                             width: width,
                             height: self.line_height,
-                        }
+                        },
                     ));
                     self.remaining -= width;
 
@@ -172,7 +173,7 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
                     for split in &obj.text_splits {
                         min.0 = cmp::min(min.0, split.2.x);
                         min.1 = cmp::min(min.1, split.2.y);
-                        max.0 = cmp::max(max.0, split.2.x +split.2.width);
+                        max.0 = cmp::max(max.0, split.2.x + split.2.width);
                         max.1 = cmp::max(max.1, split.2.y + split.2.height);
                     }
                     obj.draw_rect = Rect {
@@ -189,13 +190,18 @@ impl <A: Assets> LayoutEngine<Info> for Lined<A> {
                 self.remaining = self.width;
             }
             obj.draw_rect.x = self.width - self.remaining;
-            obj.draw_rect.y = self.line * self.line_height + (self.line_height - obj.draw_rect.height) / 2;
+            obj.draw_rect.y =
+                self.line * self.line_height + (self.line_height - obj.draw_rect.height) / 2;
 
             self.remaining -= obj.draw_rect.width;
         }
     }
 
-    fn finalize_layout(&mut self, obj: &mut RenderObject<Info>, children: Vec<&mut RenderObject<Info>>) {
+    fn finalize_layout(
+        &mut self,
+        obj: &mut RenderObject<Info>,
+        children: Vec<&mut RenderObject<Info>>,
+    ) {
         use std::cmp;
         let mut max = obj.min_size;
         for c in children {
@@ -260,10 +266,7 @@ impl LayoutEngine<Info> for Grid {
         let height = self.cell_height;
         obj.draw_rect.width = width;
         obj.draw_rect.height = height;
-        obj.max_size = (
-            Some(obj.draw_rect.width),
-            Some(obj.draw_rect.height),
-        );
+        obj.max_size = (Some(obj.draw_rect.width), Some(obj.draw_rect.height));
 
         obj.draw_rect.x = self.margin + self.x * width + self.spacing * self.x;
         obj.draw_rect.y = self.margin + self.y * height + self.spacing * self.y;
@@ -285,7 +288,11 @@ impl LayoutEngine<Info> for Grid {
         }
     }
 
-    fn finalize_layout(&mut self, obj: &mut RenderObject<Info>, _children: Vec<&mut RenderObject<Info>>) {
+    fn finalize_layout(
+        &mut self,
+        obj: &mut RenderObject<Info>,
+        _children: Vec<&mut RenderObject<Info>>,
+    ) {
         if let Some(w) = obj.max_size.0 {
             obj.draw_rect.width = w;
         }

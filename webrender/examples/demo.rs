@@ -1,13 +1,12 @@
+extern crate glutin;
+extern crate image;
 #[macro_use]
 extern crate stylish;
 extern crate stylish_webrender;
-extern crate glutin;
-extern crate image;
 
-use glutin::{WindowEvent as WiEvent, Event,
-             VirtualKeyCode as KeyC, GlRequest,
-             Api, ElementState as ElSt, MouseButton as MsBtn, GlContext,
-             KeyboardInput, MouseScrollDelta};
+use glutin::{Api, ElementState as ElSt, Event, GlContext, GlRequest, KeyboardInput,
+             MouseButton as MsBtn, MouseScrollDelta, VirtualKeyCode as KeyC,
+             WindowEvent as WiEvent};
 
 use std::thread;
 use std::time::Duration;
@@ -23,7 +22,9 @@ impl stylish_webrender::Assets for TestLoader {
         use std::io::Read;
         let mut file = if let Ok(f) = fs::File::open(format!("res/{}.ttf", name)) {
             f
-        } else { return None; };
+        } else {
+            return None;
+        };
         let mut data = Vec::new();
         file.read_to_end(&mut data).unwrap();
         Some(data)
@@ -32,7 +33,9 @@ impl stylish_webrender::Assets for TestLoader {
         use std::io::BufReader;
         let file = BufReader::new(if let Ok(f) = fs::File::open(format!("res/{}.png", name)) {
             f
-        } else { return None; });
+        } else {
+            return None;
+        });
         let img = if let Ok(val) = image::load(file, image::ImageFormat::PNG) {
             val
         } else {
@@ -58,7 +61,7 @@ impl stylish_webrender::Assets for TestLoader {
                     },
                     is_opaque: false,
                 })
-            },
+            }
             _ => {
                 let img = img.to_rgb();
                 Some(stylish_webrender::Image {
@@ -68,7 +71,7 @@ impl stylish_webrender::Assets for TestLoader {
                     data: img.into_raw(),
                     is_opaque: true,
                 })
-            },
+            }
         }
     }
 }
@@ -99,19 +102,28 @@ fn main() {
         |n| gl_window.get_proc_address(n),
         TestLoader,
         &mut manager,
-    )
-        .unwrap();
+    ).unwrap();
 
-    manager.add_node_str(r##"
+    manager
+        .add_node_str(
+            r##"
 background
-"##).unwrap();
-    manager.add_node_str(r##"
+"##,
+        )
+        .unwrap();
+    manager
+        .add_node_str(
+            r##"
 top_bar {
     rust_logo
     "Stylish Demo"
 }
-"##).unwrap();
-    manager.add_node_str(r##"
+"##,
+        )
+        .unwrap();
+    manager
+        .add_node_str(
+            r##"
 text_box {
     cbox(w=20,h=16,col="#FF0000")
     " Hello world this needs to be long enough to overflow "
@@ -152,8 +164,12 @@ text_box {
     "! "(color="#ff0035")
     cbox(w=70,h=24,col="#FF00FF")
 }
-"##).unwrap();
-    manager.add_node_str(r##"
+"##,
+        )
+        .unwrap();
+    manager
+        .add_node_str(
+            r##"
 grid_box {
     text_box {
         "Grid layouts"
@@ -168,15 +184,22 @@ grid_box {
     }
     gradient(a="#C02425", b="#F0CB35")
 }
-"##).unwrap();
-    manager.add_node_str(include_str!("lorem_ipsum.in")).unwrap();
+"##,
+        )
+        .unwrap();
+    manager
+        .add_node_str(include_str!("lorem_ipsum.in"))
+        .unwrap();
     // Macro demo
     manager.add_node(node!{
         dragable(x=200, y=60) {
             @text("Drag me!")
         }
     });
-    manager.load_styles("base", r##"
+    manager
+        .load_styles(
+            "base",
+            r##"
 dragable(x=x, y=y) {
     x = x,
     y = y,
@@ -344,7 +367,9 @@ cbox(w=width, h=height, col=color) {
     background_color = color,
 }
 
-"##).unwrap();
+"##,
+        )
+        .unwrap();
 
     let target_frame_time = Duration::from_secs(1) / TARGET_FPS;
 
@@ -358,8 +383,7 @@ cbox(w=width, h=height, col=color) {
     let mut current_drag: Option<Drag> = None;
     let mut mouse_pos = (0, 0);
 
-    'main_loop:
-    loop {
+    'main_loop: loop {
         let mut finished = false;
         let start = ::std::time::Instant::now();
 
@@ -367,18 +391,28 @@ cbox(w=width, h=height, col=color) {
         renderer.layout(&mut manager, width, height);
 
         events_loop.poll_events(|event| {
-            if let Event::WindowEvent {event, .. } = event {
-            match event {
-                WiEvent::Closed |
-                WiEvent::KeyboardInput {input: KeyboardInput {virtual_keycode: Some(KeyC::Escape), .. } , .. } => {
-                    finished = true;
-                    return;
-                },
-                WiEvent::MouseInput{state: ElSt::Pressed, button: MsBtn::Left, ..} => {
-                    for n in manager.query_at(mouse_pos.0, mouse_pos.1)
-                        .matches()
-                    {
-                        if n.get_property::<i32>("x").is_some() && n.get_property::<i32>("y").is_some() {
+            if let Event::WindowEvent { event, .. } = event {
+                match event {
+                    WiEvent::Closed |
+                    WiEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                virtual_keycode: Some(KeyC::Escape),
+                                ..
+                            },
+                        ..
+                    } => {
+                        finished = true;
+                        return;
+                    }
+                    WiEvent::MouseInput {
+                        state: ElSt::Pressed,
+                        button: MsBtn::Left,
+                        ..
+                    } => for n in manager.query_at(mouse_pos.0, mouse_pos.1).matches() {
+                        if n.get_property::<i32>("x").is_some()
+                            && n.get_property::<i32>("y").is_some()
+                        {
                             current_drag = Some(Drag {
                                 target: n,
                                 x: mouse_pos.0,
@@ -386,66 +420,70 @@ cbox(w=width, h=height, col=color) {
                             });
                             break;
                         }
+                    },
+                    WiEvent::MouseInput {
+                        state: ElSt::Released,
+                        button: MsBtn::Left,
+                        ..
+                    } => {
+                        current_drag = None;
                     }
-                },
-                WiEvent::MouseInput{state: ElSt::Released, button: MsBtn::Left, ..} => {
-                    current_drag = None;
-                },
-                WiEvent::MouseMoved{position: (x, y), ..} => {
-                    let (x, y) =  (x as i32, y as i32);
-                    mouse_pos = (x, y);
-                    if let Some(last_hover) = last_hover.take() {
-                        last_hover.set_property("hover", false);
-                    }
-                    if let Some(drag) = current_drag.as_mut() {
-                        let dx = x - drag.x;
-                        let dy = y - drag.y;
+                    WiEvent::MouseMoved {
+                        position: (x, y), ..
+                    } => {
+                        let (x, y) = (x as i32, y as i32);
+                        mouse_pos = (x, y);
+                        if let Some(last_hover) = last_hover.take() {
+                            last_hover.set_property("hover", false);
+                        }
+                        if let Some(drag) = current_drag.as_mut() {
+                            let dx = x - drag.x;
+                            let dy = y - drag.y;
 
-                        let lx = drag.target.get_property::<i32>("x").unwrap();
-                        let ly = drag.target.get_property::<i32>("y").unwrap();
-                        drag.target.set_property("x", lx + dx);
-                        drag.target.set_property("y", ly + dy);
+                            let lx = drag.target.get_property::<i32>("x").unwrap();
+                            let ly = drag.target.get_property::<i32>("y").unwrap();
+                            drag.target.set_property("x", lx + dx);
+                            drag.target.set_property("y", ly + dy);
 
-                        drag.x = x;
-                        drag.y = y;
-                    } else if let Some(hover) = manager.query_at(x, y)
-                        .name("gradient")
-                        .matches()
-                        .next()
-                    {
-                        hover.set_property("hover", true);
-                        last_hover = Some(hover);
-                    }
-                },
-                WiEvent::MouseWheel{delta, ..} => {
-                    for node in manager.query_at(mouse_pos.0, mouse_pos.1)
-                        .matches()
-                    {
-                        if node.get_value::<bool>("can_scroll").unwrap_or(false) {
-                            let mut max = 0;
-                            for n in node.children() {
-                                let obj = n.render_object();
-                                let m = obj.draw_rect.y + obj.draw_rect.height;
-                                if m > max {
-                                    max = m;
-                                }
-                            }
-                            max -= node.render_object().draw_rect.height;
-                            if max < 0 {
-                                max = 0;
-                            }
-                            let oy = node.get_property::<f64>("scroll_y").unwrap_or(0.0);
-                            let y = match delta {
-                                MouseScrollDelta::LineDelta(_, y) => y,
-                                MouseScrollDelta::PixelDelta(_, y) => y,
-                            };
-                            node.set_property("scroll_y", (oy + y as f64 * 5.0).min(0.0).max(-max as f64));
-                            break;
+                            drag.x = x;
+                            drag.y = y;
+                        } else if let Some(hover) =
+                            manager.query_at(x, y).name("gradient").matches().next()
+                        {
+                            hover.set_property("hover", true);
+                            last_hover = Some(hover);
                         }
                     }
-                },
-                _ => {}
-            }
+                    WiEvent::MouseWheel { delta, .. } => {
+                        for node in manager.query_at(mouse_pos.0, mouse_pos.1).matches() {
+                            if node.get_value::<bool>("can_scroll").unwrap_or(false) {
+                                let mut max = 0;
+                                for n in node.children() {
+                                    let obj = n.render_object();
+                                    let m = obj.draw_rect.y + obj.draw_rect.height;
+                                    if m > max {
+                                        max = m;
+                                    }
+                                }
+                                max -= node.render_object().draw_rect.height;
+                                if max < 0 {
+                                    max = 0;
+                                }
+                                let oy = node.get_property::<f64>("scroll_y").unwrap_or(0.0);
+                                let y = match delta {
+                                    MouseScrollDelta::LineDelta(_, y) => y,
+                                    MouseScrollDelta::PixelDelta(_, y) => y,
+                                };
+                                node.set_property(
+                                    "scroll_y",
+                                    (oy + y as f64 * 5.0).min(0.0).max(-max as f64),
+                                );
+                                break;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
         });
 
@@ -461,6 +499,5 @@ cbox(w=width, h=height, col=color) {
         if frame_time < target_frame_time {
             thread::sleep(target_frame_time - frame_time);
         }
-
     }
 }

@@ -3,7 +3,8 @@ use stylish;
 use stylish::error::ErrorKind;
 
 pub fn deg(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
-    let val = params.get(0)
+    let val = params
+        .get(0)
         .ok_or_else(|| ErrorKind::MissingParameter("degrees"))?;
 
     if let Some(d) = val.get_value::<i32>() {
