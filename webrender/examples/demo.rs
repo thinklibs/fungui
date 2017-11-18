@@ -387,12 +387,18 @@ cbox(w=width, h=height, col=color) {
         let mut finished = false;
         let start = ::std::time::Instant::now();
 
-        let (width, height) = gl_window.get_inner_size_pixels().unwrap();
+        let (mut width, mut height) = gl_window.get_inner_size_pixels().unwrap();
         renderer.layout(&mut manager, width, height);
 
         events_loop.poll_events(|event| {
             if let Event::WindowEvent { event, .. } = event {
                 match event {
+                    WiEvent::Resized(w, h) => {
+                        width = w;
+                        height = h;
+                        gl_window.resize(width, height);
+                        renderer.layout(&mut manager, width, height);
+                    }
                     WiEvent::Closed |
                     WiEvent::KeyboardInput {
                         input:
