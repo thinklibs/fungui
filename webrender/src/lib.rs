@@ -1,10 +1,10 @@
 
-extern crate webrender;
-extern crate gleam;
-extern crate stylish;
 extern crate app_units;
-extern crate stb_truetype;
 extern crate euclid;
+extern crate gleam;
+extern crate stb_truetype;
+extern crate stylish;
+extern crate webrender;
 
 mod assets;
 pub use assets::*;
@@ -59,7 +59,7 @@ pub struct WebRenderer<A> {
     force_build: bool,
 }
 
-impl <A> Drop for WebRenderer<A> {
+impl<A> Drop for WebRenderer<A> {
     fn drop(&mut self) {
         self.renderer.take().unwrap().deinit();
     }
@@ -73,17 +73,16 @@ struct Font {
     instances: HashMap<app_units::Au, FontInstanceKey>,
 }
 
-impl <A: Assets + 'static> WebRenderer<A> {
+impl<A: Assets + 'static> WebRenderer<A> {
     pub fn new<F>(
         load_fn: F,
         assets: A,
         manager: &mut stylish::Manager<Info>,
     ) -> WResult<WebRenderer<A>>
-        where F: Fn(&str) -> *const ()
+    where
+        F: Fn(&str) -> *const (),
     {
-        let gl = unsafe {gleam::gl::GlFns::load_with(|f|
-            load_fn(f) as *const _
-        )};
+        let gl = unsafe { gleam::gl::GlFns::load_with(|f| load_fn(f) as *const _) };
 
         manager.add_func_raw("rgb", rgb);
         manager.add_func_raw("rgba", rgba);
@@ -107,9 +106,9 @@ impl <A: Assets + 'static> WebRenderer<A> {
             resource_override_path: None,
             debug: false,
             clear_framebuffer: false,
-            .. Default::default()
+            ..Default::default()
         };
-        let (renderer, sender) = webrender::Renderer::new(gl, Box::new(Dummy),options).unwrap();
+        let (renderer, sender) = webrender::Renderer::new(gl, Box::new(Dummy), options).unwrap();
         let api = sender.create_api();
         let document = api.add_document(DeviceUintSize::new(800, 480));
 
@@ -151,13 +150,9 @@ impl <A: Assets + 'static> WebRenderer<A> {
         match self.images.entry(key.to_owned()) {
             Entry::Occupied(val) => {
                 let (key, desc) = *val.get();
-                self.resources.update_image(
-                    key,
-                    desc,
-                    ImageData::new(img.data),
-                    None
-                );
-            },
+                self.resources
+                    .update_image(key, desc, ImageData::new(img.data), None);
+            }
             Entry::Vacant(val) => {
                 let key = self.api.generate_image_key();
                 let desc = ImageDescriptor {
@@ -171,14 +166,10 @@ impl <A: Assets + 'static> WebRenderer<A> {
                     offset: 0,
                     is_opaque: img.is_opaque,
                 };
-                self.resources.add_image(
-                    key,
-                    desc,
-                    ImageData::new(img.data),
-                    None
-                );
+                self.resources
+                    .add_image(key, desc, ImageData::new(img.data), None);
                 val.insert((key, desc));
-            },
+            }
         };
         self.force_build = true;
     }
@@ -201,10 +192,7 @@ impl <A: Assets + 'static> WebRenderer<A> {
 
         if !self.skip_build || self.force_build {
             self.force_build = false;
-            let mut builder = DisplayListBuilder::new(
-                pipeline,
-                dsize
-            );
+            let mut builder = DisplayListBuilder::new(pipeline, dsize);
 
             let mut resources = replace(&mut self.resources, ResourceUpdates::new());
 
@@ -221,11 +209,8 @@ impl <A: Assets + 'static> WebRenderer<A> {
             self.api.set_window_parameters(
                 self.document,
                 size,
-                DeviceUintRect::new(
-                    DeviceUintPoint::zero(),
-                    size,
-                ),
-                1.0
+                DeviceUintRect::new(DeviceUintPoint::zero(), size),
+                1.0,
             );
             self.api.set_display_list(
                 self.document,
@@ -283,7 +268,7 @@ struct WebBuilder<'a, A: 'a> {
     offset: Vec<LayoutPoint>,
 }
 
-impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
+impl<'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
     fn visit(&mut self, obj: &mut stylish::RenderObject<Info>) {
         use std::collections::hash_map::Entry;
 
@@ -293,27 +278,32 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         let offset = self.offset.last().cloned().unwrap_or(LayoutPoint::zero());
 
         let rect = LayoutRect::new(
-            LayoutPoint::new(obj.draw_rect.x as f32 + offset.x, obj.draw_rect.y as f32 + offset.y),
+            LayoutPoint::new(
+                obj.draw_rect.x as f32 + offset.x,
+                obj.draw_rect.y as f32 + offset.y,
+            ),
             LayoutSize::new(width, height),
         );
         let pinfo = PrimitiveInfo::new(rect);
 
         if obj.render_info.is_none() {
-            let text = if let (Some(txt), Some(font)) = (obj.text.as_ref(), obj.get_value::<String>("font")) {
+            let text = if let (Some(txt), Some(font)) =
+                (obj.text.as_ref(), obj.get_value::<String>("font"))
+            {
                 let mut fonts = self.fonts.borrow_mut();
                 let finfo = match fonts.entry(font) {
                     Entry::Occupied(v) => Some(v.into_mut()),
-                    Entry::Vacant(v) => {
-                        if let Some(data) = self.assets.load_font(v.key()) {
-                            let info = stb_truetype::FontInfo::new(data.clone(), 0).unwrap();
-                            let key = self.api.generate_font_key();
-                            self.resources.add_raw_font(key, data, 0);
-                            Some(v.insert(Font {
-                                key: key,
-                                info: info,
-                                instances: HashMap::new(),
-                            }))
-                        } else { None }
+                    Entry::Vacant(v) => if let Some(data) = self.assets.load_font(v.key()) {
+                        let info = stb_truetype::FontInfo::new(data.clone(), 0).unwrap();
+                        let key = self.api.generate_font_key();
+                        self.resources.add_raw_font(key, data, 0);
+                        Some(v.insert(Font {
+                            key: key,
+                            info: info,
+                            instances: HashMap::new(),
+                        }))
+                    } else {
+                        None
                     },
                 };
                 if let Some(finfo) = finfo {
@@ -332,41 +322,42 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                     let api = &mut self.api;
                     let resources = &mut self.resources;
                     let font_key = finfo.key;
-                    let font_instance = finfo.instances.entry(font_size)
-                        .or_insert_with(|| {
-                            let key = api.generate_font_instance_key();
-                            resources.add_font_instance(key, font_key, font_size, None, None, vec![]);
-                            key
-                        });
+                    let font_instance = finfo.instances.entry(font_size).or_insert_with(|| {
+                        let key = api.generate_font_instance_key();
+                        resources.add_font_instance(key, font_key, font_size, None, None, vec![]);
+                        key
+                    });
 
                     let font_info = &finfo.info;
 
                     let scale = finfo.info.scale_for_pixel_height(size as f32);
-                    let glyphs = obj.text_splits.iter()
+                    let glyphs = obj.text_splits
+                        .iter()
                         .flat_map(|&(s, e, rect)| {
                             let rect = rect;
-                            txt[s..e].chars()
-                                .scan((0.0, None), move |state, v| {
-                                    let index = font_info.find_glyph_index(v as u32);
-                                    let g_size = if let Some(last) = state.1 {
-                                        let kern = font_info.get_glyph_kern_advance(last, index);
-                                        kern as f32 * scale
-                                    } else {
-                                        0.0
-                                    };
-                                    state.1 = Some(index);
+                            txt[s..e].chars().scan((0.0, None), move |state, v| {
+                                let index = font_info.find_glyph_index(v as u32);
+                                let g_size = if let Some(last) = state.1 {
+                                    let kern = font_info.get_glyph_kern_advance(last, index);
+                                    kern as f32 * scale
+                                } else {
+                                    0.0
+                                };
+                                state.1 = Some(index);
 
-                                    let pos = state.0 + g_size;
-                                    state.0 += g_size + font_info.get_glyph_h_metrics(index).advance_width as f32 * scale;
+                                let pos = state.0 + g_size;
+                                state.0 += g_size
+                                    + font_info.get_glyph_h_metrics(index).advance_width as f32
+                                        * scale;
 
-                                    Some(GlyphInstance {
-                                        index: index,
-                                        point: LayoutPoint::new(
-                                            rect.x as f32 + offset.x + pos,
-                                            rect.y as f32 + offset.y + size as f32 * 0.8,
-                                        ),
-                                    })
+                                Some(GlyphInstance {
+                                    index: index,
+                                    point: LayoutPoint::new(
+                                        rect.x as f32 + offset.x + pos,
+                                        rect.y as f32 + offset.y + size as f32 * 0.8,
+                                    ),
                                 })
+                            })
                         })
                         .collect();
                     Some(Text {
@@ -383,47 +374,41 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
             };
 
             let mut load_image = |v| match self.images.entry(v) {
-                    Entry::Occupied(v) => Some(v.get().0),
-                    Entry::Vacant(v) => {
-                        if let Some(img) = self.assets.load_image(v.key()) {
-                            let key = self.api.generate_image_key();
-                            let desc = ImageDescriptor {
-                                format: match img.components {
-                                    Components::RGB => ImageFormat::RGB8,
-                                    Components::BGRA => ImageFormat::BGRA8,
-                                },
-                                width: img.width,
-                                height: img.height,
-                                stride: None,
-                                offset: 0,
-                                is_opaque: img.is_opaque,
-                            };
-                            self.resources.add_image(
-                                key,
-                                desc,
-                                ImageData::new(img.data),
-                                None
-                            );
-                            Some(v.insert((key, desc)).0)
-                        } else {
-                            None
-                        }
-                    },
-                };
+                Entry::Occupied(v) => Some(v.get().0),
+                Entry::Vacant(v) => if let Some(img) = self.assets.load_image(v.key()) {
+                    let key = self.api.generate_image_key();
+                    let desc = ImageDescriptor {
+                        format: match img.components {
+                            Components::RGB => ImageFormat::RGB8,
+                            Components::BGRA => ImageFormat::BGRA8,
+                        },
+                        width: img.width,
+                        height: img.height,
+                        stride: None,
+                        offset: 0,
+                        is_opaque: img.is_opaque,
+                    };
+                    self.resources
+                        .add_image(key, desc, ImageData::new(img.data), None);
+                    Some(v.insert((key, desc)).0)
+                } else {
+                    None
+                },
+            };
 
             obj.render_info = Some(Info {
                 background_color: Color::get(obj, "background_color"),
-                image: obj.get_value::<String>("image")
-                    .and_then(|v| load_image(v)),
+                image: obj.get_value::<String>("image").and_then(|v| load_image(v)),
                 shadows: obj.get_custom_value::<shadow::Shadow>("shadow")
                     .cloned()
                     .map(|v| vec![v])
-                    .or_else(|| obj.get_custom_value::<Vec<shadow::Shadow>>("shadow")
-                        .cloned())
+                    .or_else(|| {
+                        obj.get_custom_value::<Vec<shadow::Shadow>>("shadow")
+                            .cloned()
+                    })
                     .unwrap_or_else(Vec::new),
                 text: text,
-                text_shadow: obj.get_custom_value::<TShadow>("text_shadow")
-                    .cloned(),
+                text_shadow: obj.get_custom_value::<TShadow>("text_shadow").cloned(),
 
                 border_widths: obj.get_custom_value::<border::BorderWidthInfo>("border_width")
                     .map(|v| v.widths)
@@ -435,15 +420,27 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                     }),
                 border: obj.get_custom_value::<border::Border>("border")
                     .map(|v| match *v {
-                        border::Border::Normal{left, top, right, bottom} => BorderDetails::Normal(NormalBorder {
+                        border::Border::Normal {
+                            left,
+                            top,
+                            right,
+                            bottom,
+                        } => BorderDetails::Normal(NormalBorder {
                             left: left,
                             top: top,
                             right: right,
                             bottom: bottom,
 
-                            radius: BorderRadius::uniform(obj.get_value::<f64>("border_radius").unwrap_or(0.0) as f32),
+                            radius: BorderRadius::uniform(
+                                obj.get_value::<f64>("border_radius").unwrap_or(0.0) as f32,
+                            ),
                         }),
-                        border::Border::Image{ref image, patch, repeat, fill} => BorderDetails::Image(ImageBorder {
+                        border::Border::Image {
+                            ref image,
+                            patch,
+                            repeat,
+                            fill,
+                        } => BorderDetails::Image(ImageBorder {
                             image_key: load_image(image.clone()).unwrap(),
                             patch: patch,
                             fill: fill,
@@ -470,10 +467,7 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
         if !info.filters.is_empty() {
             self.builder.push_stacking_context(
-                &PrimitiveInfo::new(LayoutRect::new(
-                    LayoutPoint::zero(),
-                    LayoutSize::zero(),
-                )),
+                &PrimitiveInfo::new(LayoutRect::new(LayoutPoint::zero(), LayoutSize::zero())),
                 ScrollPolicy::Scrollable,
                 None,
                 TransformStyle::Flat,
@@ -484,15 +478,21 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         }
 
         if let Some(key) = info.image {
-            self.builder.push_image(&pinfo, rect.size, LayoutSize::zero(), ImageRendering::Auto, key);
+            self.builder.push_image(
+                &pinfo,
+                rect.size,
+                LayoutSize::zero(),
+                ImageRendering::Auto,
+                key,
+            );
         }
 
         if let Some(col) = info.background_color.as_ref() {
             match *col {
                 Color::Solid(col) => {
                     self.builder.push_rect(&pinfo, col);
-                },
-                Color::Gradient{angle, ref stops} => {
+                }
+                Color::Gradient { angle, ref stops } => {
                     let len = width.max(height) / 2.0;
                     let x = len * angle.cos();
                     let y = len * angle.sin();
@@ -514,31 +514,24 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         }
 
         if let Some(border) = info.border {
-            self.builder.push_border(
-                &pinfo,
-                info.border_widths,
-                border,
-            );
+            self.builder.push_border(&pinfo, info.border_widths, border);
         }
 
         if let Some(txt) = info.text.as_ref() {
             if let Some(ts) = info.text_shadow.as_ref() {
-                let shadow_rect = rect
-                    .translate(&ts.offset)
+                let shadow_rect = rect.translate(&ts.offset)
                     .inflate(ts.blur_radius, ts.blur_radius);
-                self.builder.push_shadow(&PrimitiveInfo::new(shadow_rect), Shadow {
-                    offset: ts.offset,
-                    color: ts.color,
-                    blur_radius: ts.blur_radius,
-                });
+                self.builder.push_shadow(
+                    &PrimitiveInfo::new(shadow_rect),
+                    Shadow {
+                        offset: ts.offset,
+                        color: ts.color,
+                        blur_radius: ts.blur_radius,
+                    },
+                );
             }
-            self.builder.push_text(
-                &pinfo,
-                &txt.glyphs,
-                txt.font,
-                txt.color,
-                None
-            );
+            self.builder
+                .push_text(&pinfo, &txt.glyphs, txt.font, txt.color, None);
             if info.text_shadow.is_some() {
                 self.builder.pop_all_shadows();
             }
@@ -546,8 +539,13 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
         for shadow in &info.shadows {
             self.builder.push_box_shadow(
-                &PrimitiveInfo::with_clip(rect, LocalClip::Rect(rect.inflate(shadow.blur_radius, shadow.blur_radius)
-                    .translate(&shadow.offset))),
+                &PrimitiveInfo::with_clip(
+                    rect,
+                    LocalClip::Rect(
+                        rect.inflate(shadow.blur_radius, shadow.blur_radius)
+                            .translate(&shadow.offset),
+                    ),
+                ),
                 rect,
                 shadow.offset,
                 shadow.color,
@@ -559,7 +557,14 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         }
 
         info.clip_id = if info.clip_overflow {
-            let id = self.builder.define_scroll_frame(None, rect, rect, None, None, ScrollSensitivity::ScriptAndInputEvents);
+            let id = self.builder.define_scroll_frame(
+                None,
+                rect,
+                rect,
+                None,
+                None,
+                ScrollSensitivity::ScriptAndInputEvents,
+            );
             self.builder.push_clip_id(id);
             Some(id)
         } else {
@@ -583,11 +588,9 @@ impl <'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
 struct Dummy;
 impl RenderNotifier for Dummy {
-    fn new_frame_ready(&self) {
-    }
+    fn new_frame_ready(&self) {}
 
-    fn new_scroll_frame_ready(&self, _composite_needed: bool) {
-    }
+    fn new_scroll_frame_ready(&self, _composite_needed: bool) {}
 
     fn clone(&self) -> Box<RenderNotifier> {
         Box::new(Dummy)

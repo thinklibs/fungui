@@ -25,7 +25,7 @@ pub(crate) enum Rule {
     Text,
 }
 
-impl <RInfo> Query<RInfo> {
+impl<RInfo> Query<RInfo> {
     pub(super) fn new(node: Node<RInfo>) -> Query<RInfo> {
         Query {
             root: node,
@@ -35,23 +35,25 @@ impl <RInfo> Query<RInfo> {
     }
 
     pub fn name<S>(mut self, name: S) -> Query<RInfo>
-        where S: Into<String>
+    where
+        S: Into<String>,
     {
         self.rules.push(Rule::Name(name.into()));
         self
     }
 
-    pub fn text(mut self) -> Query<RInfo>
-    {
+    pub fn text(mut self) -> Query<RInfo> {
         self.rules.push(Rule::Text);
         self
     }
 
     pub fn property<S, V>(mut self, key: S, val: V) -> Query<RInfo>
-        where V: PropertyValue,
-              S: Into<String>
+    where
+        V: PropertyValue,
+        S: Into<String>,
     {
-        self.rules.push(Rule::Property(key.into(), val.convert_into()));
+        self.rules
+            .push(Rule::Property(key.into(), val.convert_into()));
         self
     }
 
@@ -62,22 +64,31 @@ impl <RInfo> Query<RInfo> {
 
     pub fn matches(self) -> QueryIterator<RInfo> {
         let rect = if let Some(loc) = self.location {
-            let rect = self.root.render_position()
-                .unwrap_or(Rect{x: 0, y: 0, width: 0, height: 0});
+            let rect = self.root.render_position().unwrap_or(Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            });
 
-            if loc.x < rect.x || loc.x >= rect.x + rect.width
-                || loc.y < rect.y || loc.y >= rect.y + rect.height
+            if loc.x < rect.x || loc.x >= rect.x + rect.width || loc.y < rect.y
+                || loc.y >= rect.y + rect.height
             {
                 return QueryIterator {
                     nodes: vec![],
                     rules: self.rules,
                     location: self.location,
-                }
+                };
             }
             rect
         } else {
             // Dummy out unused data
-            Rect{x: 0, y: 0, width: 0, height: 0}
+            Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            }
         };
         let offset = num_children(&self.root) as isize - 1;
         QueryIterator {
@@ -98,7 +109,7 @@ pub struct QueryIterator<RInfo> {
     location: Option<AtLocation>,
 }
 
-impl <RInfo> Clone for QueryIterator<RInfo> {
+impl<RInfo> Clone for QueryIterator<RInfo> {
     fn clone(&self) -> Self {
         QueryIterator {
             nodes: Clone::clone(&self.nodes),
@@ -117,10 +128,9 @@ fn num_children<T>(node: &Node<T>) -> usize {
     }
 }
 
-impl <RInfo> Iterator for QueryIterator<RInfo> {
+impl<RInfo> Iterator for QueryIterator<RInfo> {
     type Item = Node<RInfo>;
     fn next(&mut self) -> Option<Node<RInfo>> {
-
         enum Action<RInfo> {
             Nothing,
             Pop,
@@ -128,8 +138,7 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
             Remove(Node<RInfo>),
         }
 
-        'search:
-        loop {
+        'search: loop {
             let action = if let Some(cur) = self.nodes.last_mut() {
                 if cur.1 == -1 {
                     Action::Remove(cur.0.clone())
@@ -143,16 +152,12 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
                                 let p_rect = cur.2;
                                 let p = node.parent().inner;
                                 let inner = p.borrow();
-                                let p_obj = match inner.render_object
-                                    .as_ref()
-                                {
+                                let p_obj = match inner.render_object.as_ref() {
                                     Some(v) => v,
                                     None => continue 'search,
                                 };
                                 let self_inner = node.inner.borrow();
-                                let s_obj = match self_inner.render_object
-                                    .as_ref()
-                                {
+                                let s_obj = match self_inner.render_object.as_ref() {
                                     Some(v) => v,
                                     None => continue 'search,
                                 };
@@ -180,15 +185,23 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
                                         rect.height = (p_rect.y + p_rect.height) - rect.y;
                                     }
                                 }
-                                if loc.x < rect.x || loc.x >= rect.x + rect.width
-                                    || loc.y < rect.y || loc.y >= rect.y + rect.height
+                                if loc.x < rect.x || loc.x >= rect.x + rect.width || loc.y < rect.y
+                                    || loc.y >= rect.y + rect.height
                                 {
                                     Action::Nothing
                                 } else {
                                     Action::Push(node.clone(), rect)
                                 }
                             } else {
-                                Action::Push(node.clone(), Rect{x: 0, y: 0, width: 0, height: 0})
+                                Action::Push(
+                                    node.clone(),
+                                    Rect {
+                                        x: 0,
+                                        y: 0,
+                                        width: 0,
+                                        height: 0,
+                                    },
+                                )
                             }
                         } else {
                             unreachable!()
@@ -206,30 +219,27 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
                 Action::Pop => {
                     self.nodes.pop();
                     continue 'search;
-                },
+                }
                 Action::Push(node, rect) => {
-                    self.nodes.push((node.clone(), num_children(&node) as isize - 1, rect));
+                    self.nodes
+                        .push((node.clone(), num_children(&node) as isize - 1, rect));
                     continue 'search;
-                },
+                }
                 Action::Remove(node) => {
                     self.nodes.pop();
                     node
-                },
+                }
             };
 
             let mut cur = node.clone();
             for rule in self.rules.iter().rev() {
                 match *rule {
-                    Rule::Text => {
-                        if let NodeValue::Element(_) = cur.inner.borrow().value {
-                            continue 'search;
-                        }
-                    }
-                    Rule::Name(ref n) => {
-                        if !cur.name().map_or(false, |v| *v == *n) {
-                            continue 'search;
-                        }
-                    }
+                    Rule::Text => if let NodeValue::Element(_) = cur.inner.borrow().value {
+                        continue 'search;
+                    },
+                    Rule::Name(ref n) => if !cur.name().map_or(false, |v| *v == *n) {
+                        continue 'search;
+                    },
                     Rule::Property(ref k, ref val) => {
                         if !cur.get_property::<Value>(k).map_or(false, |v| v == *val) {
                             continue 'search;
@@ -251,7 +261,8 @@ impl <RInfo> Iterator for QueryIterator<RInfo> {
 
 #[test]
 fn test() {
-    let doc = syntax::desc::Document::parse(r#"
+    let doc = syntax::desc::Document::parse(
+        r#"
 panel {
     icon(type="warning")
     icon(type="warning")
@@ -260,7 +271,8 @@ panel {
     icon(type="test")
 }
 
-"#).unwrap();
+"#,
+    ).unwrap();
     let node = Node::<()>::from_document(doc);
 
     for n in node.query()

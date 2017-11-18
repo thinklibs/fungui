@@ -254,7 +254,9 @@ fn test_query_macro() {
         }
     };
     assert_eq!(
-        query!(node, test > inner(a=5) > @text).next().and_then(|v| v.text()),
+        query!(node, test > inner(a=5) > @text)
+            .next()
+            .and_then(|v| v.text()),
         Some("hello".to_owned())
     )
 }

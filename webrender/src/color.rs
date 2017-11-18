@@ -54,11 +54,13 @@ impl stylish::CustomValue for ColorStop {
 }
 
 pub fn stop(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
-    let offset = params.get(0)
+    let offset = params
+        .get(0)
         .ok_or_else(|| ErrorKind::MissingParameter("offset"))?
         .get_value::<f64>()
         .ok_or_else(|| ErrorKind::IncorrectType("offset", "float"))?;
-    let color = Color::get_val(params.get(1)
+    let color = Color::get_val(params
+        .get(1)
         .ok_or_else(|| ErrorKind::MissingParameter("color"))?)
         .ok_or_else(|| ErrorKind::IncorrectType("color", "color"))?;
 
@@ -73,18 +75,20 @@ pub fn stop(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
 }
 
 pub fn gradient(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
-    let angle = params.get(0)
+    let angle = params
+        .get(0)
         .ok_or_else(|| ErrorKind::MissingParameter("angle"))?
         .get_value::<f64>()
         .ok_or_else(|| ErrorKind::IncorrectType("angle", "float"))?;
 
-    let stops = params.into_iter()
+    let stops = params
+        .into_iter()
         .skip(1)
-        .map(|v|
+        .map(|v| {
             v.get_custom_value::<ColorStop>()
                 .map(|v| v.0)
                 .ok_or_else(|| ErrorKind::IncorrectType("stop", "color stop").into())
-        )
+        })
         .collect::<stylish::SResult<Vec<_>>>()?;
 
     Ok(stylish::Value::Any(Box::new(Color::Gradient {
@@ -94,63 +98,70 @@ pub fn gradient(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value>
 }
 
 pub fn rgb(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
-    let r = params.get(0)
+    let r = params
+        .get(0)
         .ok_or_else(|| ErrorKind::MissingParameter("r"))?;
-    let g = params.get(1)
+    let g = params
+        .get(1)
         .ok_or_else(|| ErrorKind::MissingParameter("g"))?;
-    let b = params.get(2)
+    let b = params
+        .get(2)
         .ok_or_else(|| ErrorKind::MissingParameter("b"))?;
 
     Ok(stylish::Value::Any(Box::new(Color::Solid(ColorF::new(
         match *r {
             stylish::Value::Integer(v) => v as f32 / 255.0,
             stylish::Value::Float(v) => v as f32,
-            _ =>return Err(ErrorKind::IncorrectType("r", "float or integer").into()),
+            _ => return Err(ErrorKind::IncorrectType("r", "float or integer").into()),
         },
         match *g {
             stylish::Value::Integer(v) => v as f32 / 255.0,
             stylish::Value::Float(v) => v as f32,
-            _ =>return Err(ErrorKind::IncorrectType("g", "float or integer").into()),
+            _ => return Err(ErrorKind::IncorrectType("g", "float or integer").into()),
         },
         match *b {
             stylish::Value::Integer(v) => v as f32 / 255.0,
             stylish::Value::Float(v) => v as f32,
-            _ =>return Err(ErrorKind::IncorrectType("b", "float or integer").into()),
+            _ => return Err(ErrorKind::IncorrectType("b", "float or integer").into()),
         },
-        1.0
+        1.0,
     )))))
 }
 
 pub fn rgba(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> {
-    let r = params.get(0)
+    let r = params
+        .get(0)
         .ok_or_else(|| ErrorKind::MissingParameter("r"))?;
-    let g = params.get(1)
+    let g = params
+        .get(1)
         .ok_or_else(|| ErrorKind::MissingParameter("g"))?;
-    let b = params.get(2)
+    let b = params
+        .get(2)
         .ok_or_else(|| ErrorKind::MissingParameter("b"))?;
-    let a = params.get(3)
+    let a = params
+        .get(3)
         .ok_or_else(|| ErrorKind::MissingParameter("a"))?;
 
     Ok(stylish::Value::Any(Box::new(Color::Solid(ColorF::new(
         match *r {
             stylish::Value::Integer(v) => v as f32 / 255.0,
             stylish::Value::Float(v) => v as f32,
-            _ =>return Err(ErrorKind::IncorrectType("r", "float or integer").into()),
+            _ => return Err(ErrorKind::IncorrectType("r", "float or integer").into()),
         },
         match *g {
             stylish::Value::Integer(v) => v as f32 / 255.0,
             stylish::Value::Float(v) => v as f32,
-            _ =>return Err(ErrorKind::IncorrectType("g", "float or integer").into()),
+            _ => return Err(ErrorKind::IncorrectType("g", "float or integer").into()),
         },
         match *b {
             stylish::Value::Integer(v) => v as f32 / 255.0,
             stylish::Value::Float(v) => v as f32,
-            _ =>return Err(ErrorKind::IncorrectType("b", "float or integer").into()),
+            _ => return Err(ErrorKind::IncorrectType("b", "float or integer").into()),
         },
         match *a {
             stylish::Value::Integer(v) => v as f32 / 255.0,
             stylish::Value::Float(v) => v as f32,
-            _ =>return Err(ErrorKind::IncorrectType("a", "float or integer").into()),
+            _ => return Err(ErrorKind::IncorrectType("a", "float or integer").into()),
         },
     )))))
 }
@@ -161,16 +172,14 @@ pub fn parse_color(v: &str) -> Option<ColorF> {
         let col = &v[1..];
         if col.len() == 6 || col.len() == 8 {
             Some(ColorF::new(
-                u8::from_str_radix(&col[..2], 16)
-                    .unwrap() as f32 / 255.0,
-                u8::from_str_radix(&col[2..4], 16)
-                    .unwrap() as f32 / 255.0,
-                u8::from_str_radix(&col[4..6], 16)
-                    .unwrap() as f32 / 255.0,
+                u8::from_str_radix(&col[..2], 16).unwrap() as f32 / 255.0,
+                u8::from_str_radix(&col[2..4], 16).unwrap() as f32 / 255.0,
+                u8::from_str_radix(&col[4..6], 16).unwrap() as f32 / 255.0,
                 if col.len() == 8 {
-                    u8::from_str_radix(&col[6..8], 16)
-                        .unwrap()
-                } else { 255 } as f32 / 255.0,
+                    u8::from_str_radix(&col[6..8], 16).unwrap()
+                } else {
+                    255
+                } as f32 / 255.0,
             ))
         } else {
             None
@@ -180,15 +189,9 @@ pub fn parse_color(v: &str) -> Option<ColorF> {
         let mut col = col.split(",").map(|v| v.trim());
 
         Some(ColorF::new(
-            col.next()
-                .and_then(|v| v.parse::<i32>().ok())
-                .unwrap_or(0) as f32 / 255.0,
-            col.next()
-                .and_then(|v| v.parse::<i32>().ok())
-                .unwrap_or(0) as f32 / 255.0,
-            col.next()
-                .and_then(|v| v.parse::<i32>().ok())
-                .unwrap_or(0) as f32 / 255.0,
+            col.next().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0) as f32 / 255.0,
+            col.next().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0) as f32 / 255.0,
+            col.next().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0) as f32 / 255.0,
             1.0,
         ))
     } else if v.starts_with("rgba(") && v.ends_with(")") {
@@ -196,18 +199,10 @@ pub fn parse_color(v: &str) -> Option<ColorF> {
         let mut col = col.split(",").map(|v| v.trim());
 
         Some(ColorF::new(
-            col.next()
-                .and_then(|v| v.parse::<i32>().ok())
-                .unwrap_or(0) as f32 / 255.0,
-            col.next()
-                .and_then(|v| v.parse::<i32>().ok())
-                .unwrap_or(0) as f32 / 255.0,
-            col.next()
-                .and_then(|v| v.parse::<i32>().ok())
-                .unwrap_or(0) as f32 / 255.0,
-            col.next()
-                .and_then(|v| v.parse::<i32>().ok())
-                .unwrap_or(0) as f32 / 255.0,
+            col.next().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0) as f32 / 255.0,
+            col.next().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0) as f32 / 255.0,
+            col.next().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0) as f32 / 255.0,
+            col.next().and_then(|v| v.parse::<i32>().ok()).unwrap_or(0) as f32 / 255.0,
         ))
     } else {
         None
