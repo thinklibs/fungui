@@ -292,6 +292,12 @@ top_bar > rust_logo {
     width = 56,
     height = 56,
     image = "rust-logo-64",
+    filters = filters(
+        "sepia", 0.99,
+        "brightness", 0.35,
+        "hue_rotate", 350.0,
+        "saturate", 25.0
+    ),
 }
 
 top_bar > @text {
