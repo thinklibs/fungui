@@ -41,38 +41,24 @@ impl stylish_webrender::Assets for TestLoader {
         } else {
             return None;
         };
-        match img.color() {
-            image::ColorType::RGBA(..) | image::ColorType::GrayA(..) => {
-                let img = img.to_rgba();
-                Some(stylish_webrender::Image {
-                    width: img.width(),
-                    height: img.height(),
-                    components: stylish_webrender::Components::BGRA,
-                    data: {
-                        let mut data = img.into_raw();
-                        for d in data.chunks_mut(4) {
-                            let a = d[3] as u32;
-                            let r = ((d[0] as u32 * a) / 255) as u8;
-                            d[0] = ((d[2] as u32 * a) / 255) as u8;
-                            d[1] = ((d[1] as u32 * a) / 255) as u8;
-                            d[2] = r;
-                        }
-                        data
-                    },
-                    is_opaque: false,
-                })
-            }
-            _ => {
-                let img = img.to_rgb();
-                Some(stylish_webrender::Image {
-                    width: img.width(),
-                    height: img.height(),
-                    components: stylish_webrender::Components::RGB,
-                    data: img.into_raw(),
-                    is_opaque: true,
-                })
-            }
-        }
+        let img = img.to_rgba();
+        Some(stylish_webrender::Image {
+            width: img.width(),
+            height: img.height(),
+            components: stylish_webrender::Components::BGRA,
+            data: {
+                let mut data = img.into_raw();
+                for d in data.chunks_mut(4) {
+                    let a = d[3] as u32;
+                    let r = ((d[0] as u32 * a) / 255) as u8;
+                    d[0] = ((d[2] as u32 * a) / 255) as u8;
+                    d[1] = ((d[1] as u32 * a) / 255) as u8;
+                    d[2] = r;
+                }
+                data
+            },
+            is_opaque: false,
+        })
     }
 }
 

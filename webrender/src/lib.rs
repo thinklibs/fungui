@@ -46,7 +46,7 @@ type WResult<T> = Result<T, Box<Error>>;
 ///                        in decimal 0-255.
 pub struct WebRenderer<A> {
     assets: Rc<A>,
-    renderer: Option<Renderer<'static>>,
+    renderer: Option<Renderer>,
     api: RenderApi,
     document: DocumentId,
     frame_id: Epoch,
@@ -57,6 +57,7 @@ pub struct WebRenderer<A> {
 
     skip_build: bool,
     force_build: bool,
+    last_size: DeviceUintSize,
 }
 
 impl<A> Drop for WebRenderer<A> {
@@ -104,16 +105,18 @@ impl<A: Assets + 'static> WebRenderer<A> {
         let options = webrender::RendererOptions {
             device_pixel_ratio: 1.0,
             resource_override_path: None,
-            debug: false,
-            clear_framebuffer: false,
+            clear_color: None,
             ..Default::default()
         };
         let (renderer, sender) = webrender::Renderer::new(gl, Box::new(Dummy), options).unwrap();
         let api = sender.create_api();
-        let document = api.add_document(DeviceUintSize::new(800, 480));
+        let size = DeviceUintSize::new(800, 480);
+        let document = api.add_document(size, 0);
 
         let pipeline = PipelineId(0, 0);
-        api.set_root_pipeline(document, pipeline);
+        let mut trans = Transaction::new();
+        trans.set_root_pipeline(pipeline);
+        api.send_transaction(document, trans);
 
         {
             let fonts = fonts.clone();
@@ -142,6 +145,7 @@ impl<A: Assets + 'static> WebRenderer<A> {
             fonts: fonts,
             skip_build: false,
             force_build: false,
+            last_size: size,
         })
     }
 
@@ -157,7 +161,6 @@ impl<A: Assets + 'static> WebRenderer<A> {
                 let key = self.api.generate_image_key();
                 let desc = ImageDescriptor {
                     format: match img.components {
-                        Components::RGB => ImageFormat::RGB8,
                         Components::BGRA => ImageFormat::BGRA8,
                     },
                     width: img.width,
@@ -165,6 +168,7 @@ impl<A: Assets + 'static> WebRenderer<A> {
                     stride: None,
                     offset: 0,
                     is_opaque: img.is_opaque,
+                    allow_mipmaps: false,
                 };
                 self.resources
                     .add_image(key, desc, ImageData::new(img.data), None);
@@ -190,6 +194,12 @@ impl<A: Assets + 'static> WebRenderer<A> {
         let size = DeviceUintSize::new(width, height);
         let dsize = LayoutSize::new(width as f32, height as f32);
 
+        if self.last_size != size {
+            self.last_size = size;
+            // BUG: Webrender seems to clear fonts on re-size?
+            self.fonts.borrow_mut().clear();
+        }
+
         if !self.skip_build || self.force_build {
             self.force_build = false;
             let mut builder = DisplayListBuilder::new(pipeline, dsize);
@@ -206,22 +216,22 @@ impl<A: Assets + 'static> WebRenderer<A> {
                 resources: &mut resources,
             });
 
-            self.api.set_window_parameters(
-                self.document,
+            let mut trans = Transaction::new();
+            trans.set_window_parameters(
                 size,
                 DeviceUintRect::new(DeviceUintPoint::zero(), size),
                 1.0,
             );
-            self.api.set_display_list(
-                self.document,
+            trans.update_resources(resources);
+            trans.set_display_list(
                 self.frame_id,
                 None,
                 dsize,
                 builder.finalize(),
                 false,
-                resources,
             );
-            self.api.generate_frame(self.document, None);
+            trans.generate_frame();
+            self.api.send_transaction(self.document, trans);
         }
 
         self.renderer.as_mut().unwrap().render(size).unwrap();
@@ -379,7 +389,6 @@ impl<'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                     let key = self.api.generate_image_key();
                     let desc = ImageDescriptor {
                         format: match img.components {
-                            Components::RGB => ImageFormat::RGB8,
                             Components::BGRA => ImageFormat::BGRA8,
                         },
                         width: img.width,
@@ -387,6 +396,7 @@ impl<'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                         stride: None,
                         offset: 0,
                         is_opaque: img.is_opaque,
+                        allow_mipmaps: false,
                     };
                     self.resources
                         .add_image(key, desc, ImageData::new(img.data), None);
@@ -468,6 +478,7 @@ impl<'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
         if !info.filters.is_empty() {
             self.builder.push_stacking_context(
                 &PrimitiveInfo::new(LayoutRect::new(LayoutPoint::zero(), LayoutSize::zero())),
+                None,
                 ScrollPolicy::Scrollable,
                 None,
                 TransformStyle::Flat,
@@ -483,6 +494,7 @@ impl<'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
                 rect.size,
                 LayoutSize::zero(),
                 ImageRendering::Auto,
+                AlphaType::PremultipliedAlpha,
                 key,
             );
         }
@@ -539,12 +551,10 @@ impl<'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
         for shadow in &info.shadows {
             self.builder.push_box_shadow(
-                &PrimitiveInfo::with_clip(
+                &PrimitiveInfo::with_clip_rect(
                     rect,
-                    LocalClip::Rect(
-                        rect.inflate(shadow.blur_radius, shadow.blur_radius)
-                            .translate(&shadow.offset),
-                    ),
+                    rect.inflate(shadow.blur_radius, shadow.blur_radius)
+                        .translate(&shadow.offset),
                 ),
                 rect,
                 shadow.offset,
@@ -588,9 +598,9 @@ impl<'a, A: Assets> stylish::RenderVisitor<Info> for WebBuilder<'a, A> {
 
 struct Dummy;
 impl RenderNotifier for Dummy {
-    fn new_frame_ready(&self) {}
+    fn wake_up(&self) {}
 
-    fn new_scroll_frame_ready(&self, _composite_needed: bool) {}
+    fn new_document_ready(&self, _id: DocumentId, _scrolled: bool, _composite_needed: bool) {}
 
     fn clone(&self) -> Box<RenderNotifier> {
         Box::new(Dummy)

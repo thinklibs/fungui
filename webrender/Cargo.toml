@@ -4,8 +4,8 @@ name = "stylish_webrender"
 version = "0.1.0"
 
 [dependencies]
-app_units = "0.5.6"
-euclid = "0.15.5"
+app_units = "0.6"
+euclid = "0.17"
 gleam = "0.4.14"
 stb_truetype = "0.2.1"
 
@@ -16,7 +16,7 @@ path = "../"
 default-features = false
 features = ["freetype-lib"]
 git = "https://github.com/servo/webrender"
-rev = "ab5a1b89"
+rev = "565e2408bf21f34bd09a555d0e72ba369daeed87"
 
 [dev-dependencies]
 glutin = "0.10.1"

@@ -42,9 +42,5 @@ pub fn filters(params: Vec<stylish::Value>) -> stylish::SResult<stylish::Value> 
         filters.push(filter);
     }
 
-    // TODO: Investigate why the filter order needs to be reversed after the
-    // webrender upgrade.
-    filters.reverse();
-
     Ok(stylish::Value::Any(Box::new(Filters(filters))))
 }
