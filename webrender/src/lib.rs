@@ -194,10 +194,13 @@ impl<A: Assets + 'static> WebRenderer<A> {
         let size = DeviceUintSize::new(width, height);
         let dsize = LayoutSize::new(width as f32, height as f32);
 
-        if self.last_size != size {
+        // BUG: Currently have to rebuild every frame to work around
+        //      a crash on SteamOS
+        {
             self.last_size = size;
             // BUG: Webrender seems to clear fonts on re-size?
             self.fonts.borrow_mut().clear();
+            self.force_build = true;
         }
 
         if !self.skip_build || self.force_build {
