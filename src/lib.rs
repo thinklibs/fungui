@@ -626,6 +626,7 @@ impl<RInfo> Node<RInfo> {
         if let NodeValue::Element(ref mut e) = inner.value {
             e.children.retain(|v| !Rc::ptr_eq(&v.inner, &node.inner));
             inner.dirty = true;
+            node.inner.borrow_mut().parent = None;
         } else {
             panic!("Text cannot have child elements")
         }
