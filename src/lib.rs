@@ -576,59 +576,56 @@ impl<RInfo> Node<RInfo> {
     /// Adds the passed node as a child to this node
     /// before other child nodes.
     ///
-    /// This panics if the passed node already has a parent
-    /// or if the node is a text node.
-    pub fn add_child_first(&self, node: Node<RInfo>) {
-        assert!(
-            node.inner.borrow().parent.is_none(),
-            "Node already has a parent"
-        );
+    /// Returns true if the node was added
+    pub fn add_child_first(&self, node: Node<RInfo>) -> bool {
+        if node.inner.borrow().parent.is_some() {
+            return false;
+        }
         if let NodeValue::Element(ref mut e) = self.inner.borrow_mut().value {
             node.inner.borrow_mut().parent = Some(Rc::downgrade(&self.inner));
             e.children.insert(0, node);
+            true
         } else {
-            panic!("Text cannot have child elements")
+            false
         }
     }
 
     /// Adds the passed node as a child to this node.
     ///
-    /// This panics if the passed node already has a parent
-    /// or if the node is a text node.
-    pub fn add_child(&self, node: Node<RInfo>) {
-        assert!(
-            node.inner.borrow().parent.is_none(),
-            "Node already has a parent"
-        );
+    /// Returns true if the node was added
+    pub fn add_child(&self, node: Node<RInfo>) -> bool {
+        if node.inner.borrow().parent.is_some() {
+            return false;
+        }
         if let NodeValue::Element(ref mut e) = self.inner.borrow_mut().value {
             node.inner.borrow_mut().parent = Some(Rc::downgrade(&self.inner));
             e.children.push(node);
+            true
         } else {
-            panic!("Text cannot have child elements")
+            false
         }
     }
 
     /// Removes the passed node as a child from this node.
     ///
-    /// This panics if the passed node 's parent isn't this node
-    /// or if the node is a text node.
-    pub fn remove_child(&self, node: Node<RInfo>) {
-        assert!(
-            node.inner
-                .borrow()
-                .parent
-                .as_ref()
-                .and_then(|v| v.upgrade())
-                .map_or(false, |v| Rc::ptr_eq(&v, &self.inner)),
-            "Node isn't child to this element"
-        );
+    /// Returns true if the node was removed
+    pub fn remove_child(&self, node: Node<RInfo>) -> bool {
+        if !node.inner
+            .borrow()
+            .parent
+            .as_ref()
+            .and_then(|v| v.upgrade())
+            .map_or(false, |v| Rc::ptr_eq(&v, &self.inner)) {
+            return false;
+        }
         let inner: &mut NodeInner<_> = &mut *self.inner.borrow_mut();
         if let NodeValue::Element(ref mut e) = inner.value {
             e.children.retain(|v| !Rc::ptr_eq(&v.inner, &node.inner));
             inner.dirty = true;
             node.inner.borrow_mut().parent = None;
+            true
         } else {
-            panic!("Text cannot have child elements")
+            false
         }
     }
 
@@ -643,18 +640,13 @@ impl<RInfo> Node<RInfo> {
     }
 
     /// Returns the parent node of this node.
-    ///
-    /// This panics if the node doesn't have a parent.
-    /// A node only doesn't have a parent before its
-    /// added to another node or if its the root node.
-    pub fn parent(&self) -> Node<RInfo> {
+    pub fn parent(&self) -> Option<Node<RInfo>> {
         let inner = self.inner.borrow();
         inner
             .parent
             .as_ref()
             .and_then(|v| v.upgrade())
             .map(|v| Node { inner: v })
-            .expect("Node hasn't got a parent")
     }
 
     /// Returns the name of the node if it has one

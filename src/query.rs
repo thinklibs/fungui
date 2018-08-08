@@ -150,7 +150,7 @@ impl<RInfo> Iterator for QueryIterator<RInfo> {
                             if let Some(loc) = self.location {
                                 let mut rect = cur.2;
                                 let p_rect = cur.2;
-                                let p = node.parent().inner;
+                                let p = node.parent()?.inner;
                                 let inner = p.borrow();
                                 let p_obj = match inner.render_object.as_ref() {
                                     Some(v) => v,
