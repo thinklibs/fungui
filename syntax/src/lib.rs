@@ -4,39 +4,42 @@ extern crate fnv;
 
 pub mod desc;
 pub mod style;
+pub(crate) mod common;
 
 
-use combine::{ParseError, State, Stream};
-use combine::primitives::{Error, Info, SourcePosition};
+use combine::easy::{ParseError};
+use combine::stream::state::{State, SourcePosition};
 use std::io::{self, Write};
 use std::hash::{Hash, Hasher};
 use std::fmt::{self, Display, Formatter};
 
-pub type PError<'a> = ParseError<State<&'a str>>;
+pub type PError<'a> = ParseError<State<&'a str, SourcePosition>>;
+
+pub use combine::easy::{Errors, Error, Info};
 
 /// An identifier.
 ///
 /// An identifier is made up of either letters, numbers
 /// or `_`.
 #[derive(Debug, Default, Clone)]
-pub struct Ident {
+pub struct Ident<'a> {
     /// The identifier's value/name
-    pub name: String,
+    pub name: &'a str,
     /// The position of the identifier within the source.
     ///
     /// Used for debugging.
     pub position: Position,
 }
 
-impl PartialEq for Ident {
+impl <'a> PartialEq for Ident<'a> {
     fn eq(&self, o: &Ident) -> bool {
         self.name == o.name
     }
 }
 
-impl Eq for Ident {}
+impl <'a> Eq for Ident<'a> {}
 
-impl Hash for Ident {
+impl <'a> Hash for Ident<'a> {
     fn hash<H>(&self, state: &mut H)
     where
         H: Hasher,
@@ -66,6 +69,15 @@ impl From<SourcePosition> for Position {
     fn from(v: SourcePosition) -> Position {
         Position {
             line_number: v.line,
+            column: v.column,
+        }
+    }
+}
+
+impl From<Position> for SourcePosition {
+    fn from(v: Position) -> SourcePosition {
+        SourcePosition {
+            line: v.line_number,
             column: v.column,
         }
     }
@@ -134,16 +146,16 @@ where
 /// Formats a parsing error using [`format_error`].
 ///
 /// [`format_error`]: fn.format_error.html
-pub fn format_parse_error<'a, I, W, S>(
+pub fn format_parse_error<'a, I, W>(
     w: W,
     source: I,
-    err: ParseError<S>,
+    err: ParseError<State<&'a str, SourcePosition>>,
 ) -> Result<(), Box<::std::error::Error>>
 where
     W: Write,
     I: Iterator<Item = &'a str>,
-    S: Stream<Item = char, Position = SourcePosition>,
 {
+    use combine::easy::{Error, Info};
     use std::fmt::Write;
     let mut msg = String::new();
     let mut label = String::new();
@@ -165,15 +177,22 @@ where
 
     match ty {
         Type::Unknown => msg.push_str("Unknown error occurred"),
-        Type::Message => for err in err.errors {
-            match err {
-                Error::Message(ref m) => match *m {
-                    Info::Owned(ref m) => msg.push_str(m),
-                    Info::Borrowed(m) => msg.push_str(m),
-                    _ => unimplemented!(),
-                },
-                Error::Other(ref err) => write!(&mut msg, "{}", err)?,
-                _ => unimplemented!(),
+        Type::Message => {
+            let len = err.errors.len();
+            for (idx, err) in err.errors.into_iter().enumerate() {
+                match err {
+                    Error::Message(ref m) => match *m {
+                        Info::Owned(ref m) => msg.push_str(m),
+                        Info::Borrowed(m) => msg.push_str(m),
+                        _ => unimplemented!(),
+                    },
+                    Error::Other(ref err) => write!(&mut msg, "{}", err)?,
+                    Error::Expected(ref t) => write!(&mut msg, "Expected: {}", t)?,
+                    Error::Unexpected(ref t) => write!(&mut msg, "Unexpected: {}", t)?,
+                }
+                if idx != len - 1 {
+                    msg.push_str(", ");
+                }
             }
         },
         Type::Unexpected => {

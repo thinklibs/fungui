@@ -1,15 +1,8 @@
-# Stylish
+# FunGUI
 
-A webrender based UI system that can (hopefully) be used in games.
+A UI layout system that seperates the description of the interface and
+the styling/layout. This is designed to be used in games and is currently
+used in [UniverCity][univercity].
 
-## Demo
 
-```bash
-cargo run -p stylish_webrender --example demo --release
-```
-
-[A slightly more complex example can be found here](https://github.com/Thinkofname/stylish_example)
-
-## Screenshots
-
-![demo](res/demo.png)
+[univercity]: https://store.steampowered.com/app/808160/UniverCity/

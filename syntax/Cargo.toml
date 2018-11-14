@@ -1,8 +1,8 @@
 [package]
-authors = ["Matthew Collins <thethinkofdeath@gmail.com>"]
-name = "stylish_syntax"
+authors = ["Matthew Collins <me@thinkof.name>"]
+name = "fungui_syntax"
 version = "0.1.0"
 
 [dependencies]
-combine = "2.5.2"
+combine = "3.6.1"
 fnv = "1.0.6"

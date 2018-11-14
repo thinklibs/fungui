@@ -23,21 +23,25 @@
 //! ```
 
 use fnv::FnvHashMap;
+use common::*;
 
 use combine::*;
-use combine::char::{alpha_num, char, digit, space, spaces, string};
-use combine::primitives::{Error, SourcePosition};
-use std::fmt::Debug;
+use combine::parser::char::*;
+use combine::error::*;
+use combine::Stream;
+use combine::easy::{ParseError,};
+use combine::stream::state::{State, SourcePosition};
 use super::{Ident, Position};
+use std::fmt::Debug;
 
 /// A UI style document
 #[derive(Debug)]
-pub struct Document {
+pub struct Document<'a> {
     /// A list of rules in this document
-    pub rules: Vec<Rule>,
+    pub rules: Vec<Rule<'a>>,
 }
 
-impl Document {
+impl <'a> Document<'a> {
     /// Attempts to parse the given string as a document.
     ///
     /// This fails when a syntax error occurs. The returned
@@ -47,7 +51,7 @@ impl Document {
     /// # Example
     ///
     /// ```
-    /// # use stylish_syntax::style::Document;
+    /// # use fungui_syntax::style::Document;
     /// assert!(Document::parse(r##"
     /// panel {
     ///     background = "#ff0000",
@@ -56,21 +60,21 @@ impl Document {
     /// ```
     ///
     /// [`format_parse_error`]: ../fn.format_parse_error.html
-    pub fn parse(source: &str) -> Result<Document, ParseError<State<&str>>> {
-        let (doc, _) = parser(parse_document).parse(State::new(source))?;
+    pub fn parse(source: &str) -> Result<Document, ParseError<State<&str, SourcePosition>>> {
+        let (doc, _) = parse_document().easy_parse(State::new(source))?;
         Ok(doc)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Rule {
-    pub matchers: Vec<(Matcher, FnvHashMap<Ident, ValueType>)>,
-    pub styles: FnvHashMap<Ident, ExprType>,
+pub struct Rule<'a> {
+    pub matchers: Vec<(Matcher<'a>, FnvHashMap<Ident<'a>, ValueType<'a>>)>,
+    pub styles: FnvHashMap<Ident<'a>, ExprType<'a>>,
 }
 
 #[derive(Debug, Clone)]
-pub enum Matcher {
-    Element(Element),
+pub enum Matcher<'a> {
+    Element(Element<'a>),
     Text,
 }
 
@@ -81,17 +85,17 @@ pub enum Matcher {
 /// as defined by the program, widgets) and must be controlled
 /// via a style document.
 #[derive(Debug, Clone)]
-pub struct Element {
+pub struct Element<'a> {
     /// The name of this element
-    pub name: Ident,
+    pub name: Ident<'a>,
 }
 
 /// Contains a value and debugging information
 /// for the value.
 #[derive(Debug, Clone)]
-pub struct ValueType {
+pub struct ValueType<'a> {
     /// The parsed value
-    pub value: Value,
+    pub value: Value<'a>,
     /// The position of the value within the source.
     ///
     /// Used for debugging.
@@ -100,7 +104,7 @@ pub struct ValueType {
 
 /// A parsed value for a property
 #[derive(Debug, Clone)]
-pub enum Value {
+pub enum Value<'a> {
     /// A boolean value
     Boolean(bool),
     /// A 32 bit integer
@@ -108,15 +112,15 @@ pub enum Value {
     /// A 64 bit float (of the form `0.0`)
     Float(f64),
     /// A quoted string
-    String(String),
+    String(&'a str),
     /// A variable name
-    Variable(Ident),
+    Variable(Ident<'a>),
 }
 
 #[derive(Debug, Clone)]
-pub struct ExprType {
+pub struct ExprType<'a> {
     /// The parsed value
-    pub expr: Expr,
+    pub expr: Expr<'a>,
     /// The position of the value within the source.
     ///
     /// Used for debugging.
@@ -124,41 +128,56 @@ pub struct ExprType {
 }
 
 #[derive(Debug, Clone)]
-pub enum Expr {
-    Value(Value),
-    Neg(Box<ExprType>),
-    Add(Box<ExprType>, Box<ExprType>),
-    Sub(Box<ExprType>, Box<ExprType>),
-    Mul(Box<ExprType>, Box<ExprType>),
-    Div(Box<ExprType>, Box<ExprType>),
-    Call(Ident, Vec<ExprType>),
+pub enum Expr<'a> {
+    Value(Value<'a>),
+    Neg(Box<ExprType<'a>>),
+
+    Not(Box<ExprType<'a>>),
+    And(Box<ExprType<'a>>, Box<ExprType<'a>>),
+    Or(Box<ExprType<'a>>, Box<ExprType<'a>>),
+    Xor(Box<ExprType<'a>>, Box<ExprType<'a>>),
+
+    Add(Box<ExprType<'a>>, Box<ExprType<'a>>),
+    Sub(Box<ExprType<'a>>, Box<ExprType<'a>>),
+    Mul(Box<ExprType<'a>>, Box<ExprType<'a>>),
+    Div(Box<ExprType<'a>>, Box<ExprType<'a>>),
+    Rem(Box<ExprType<'a>>, Box<ExprType<'a>>),
+
+    Equal(Box<ExprType<'a>>, Box<ExprType<'a>>),
+    NotEqual(Box<ExprType<'a>>, Box<ExprType<'a>>),
+    LessEqual(Box<ExprType<'a>>, Box<ExprType<'a>>),
+    GreaterEqual(Box<ExprType<'a>>, Box<ExprType<'a>>),
+    Less(Box<ExprType<'a>>, Box<ExprType<'a>>),
+    Greater(Box<ExprType<'a>>, Box<ExprType<'a>>),
+
+    IntToFloat(Box<ExprType<'a>>),
+    FloatToInt(Box<ExprType<'a>>),
+
+    Call(Ident<'a>, Vec<ExprType<'a>>),
 }
 
-fn parse_document<I>(input: I) -> ParseResult<Document, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-    I: Debug,
-    I::Range: Debug,
+fn parse_document<'a, I>() -> impl Parser<Input = I, Output = Document<'a>>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
 {
-    let rule = (parser(parse_rule), spaces()).map(|v| v.0);
+    let rule = (parse_rule(), spaces()).map(|v| v.0);
     spaces()
         .with(many1(rule))
         .map(|e| Document { rules: e })
-        .parse_stream(input)
 }
 
-fn parse_rule<I>(input: I) -> ParseResult<Rule, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-    I: Debug,
-    I::Range: Debug,
+fn parse_rule<'a, I>() -> impl Parser<Input = I, Output = Rule<'a>>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
 {
-    let comments = skip_many(parser(skip_comment));
+    let comments = skip_many(skip_comment());
 
     let matcher = (
         try(spaces().with(string("@text").map(|_| Matcher::Text)))
-            .or(parser(parse_element).map(|v| Matcher::Element(v))),
-        optional(parser(properties)).map(|v| v.unwrap_or_default()),
+            .or(parse_element().map(|v| Matcher::Element(v))),
+        optional(properties()).map(|v| v.unwrap_or_default()),
     );
 
     let rule = (
@@ -175,418 +194,341 @@ where
                 styles: v.1,
             }
         })
-        .parse_stream(input)
 }
 
-fn parse_element<I>(input: I) -> ParseResult<Element, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
+fn parse_element<'a, I>() -> impl Parser<Input = I, Output = Element<'a>>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
 {
-    let comments = skip_many(parser(skip_comment));
+    let comments = skip_many(skip_comment());
 
-    let element = parser(ident).skip(look_ahead(char('{').or(char('(')).or(space()).map(|_| ())));
+    let element = ident().skip(look_ahead(char('{').or(char('(')).or(space()).map(|_| ())));
 
     spaces()
         .with(comments)
         .with(element)
         .map(|v| Element { name: v })
-        .parse_stream(input)
 }
 
-fn ident<I>(input: I) -> ParseResult<Ident, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
+fn styles<'a, I>(input: &mut I) -> ParseResult<FnvHashMap<Ident<'a>, ExprType<'a>>, I>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
 {
-    (position(), many1(alpha_num().or(char('_'))))
-        .map(|(pos, name): (_, String)| {
-            Ident {
-                name: name,
-                position: SourcePosition::into(pos),
-            }
-        })
-        .parse_stream(input)
-}
+    let (_, _) = char('{').parse_stream(input)?;
 
-fn styles<I>(input: I) -> ParseResult<FnvHashMap<Ident, ExprType>, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-    I: Debug,
-    I::Range: Debug,
-{
-    let (_, mut input) = try!(char('{').parse_lazy(input).into());
+    enum Flow<T> {
+        Continue(T),
+        Break,
+    }
 
     let mut styles = FnvHashMap::default();
     loop {
-        match input
-            .clone()
-            .combine(|input| spaces().with(char('}')).parse_lazy(input).into())
-        {
-            Ok(i) => {
-                input = i.1;
-                break;
-            }
-            Err(_) => {}
-        };
-
-        match input.clone().combine(|input| {
-            spaces().with(parser(skip_comment)).parse_lazy(input).into()
-        }) {
-            Ok(i) => {
-                input = i.1;
-                continue;
-            }
-            Err(_) => {}
-        };
-
-        let prop = (parser(style_property), optional(token(',')));
-
-        let ((prop, end), i) = try!(input.combine(|input| {
-            spaces()
-                .with(skip_many(parser(skip_comment)))
-                .with(prop)
-                .parse_lazy(input)
-                .into()
-        }));
-        input = i;
-        styles.insert(prop.0, prop.1);
-
-        if end.is_none() {
-            let (_, i) = input
-                .clone()
-                .combine(|input| spaces().with(char('}')).parse_lazy(input).into())?;
-            input = i;
+        let prop = (style_property(), optional(token(',')));
+        let (ret, _) = spaces()
+                .with(skip_many(skip_comment()))
+                .with(
+                    try(char('}').map(|_| Flow::Break))
+                        .or(
+                            prop
+                            .map(|v| Flow::Continue(v.0))
+                        ),
+                )
+                .parse_stream(input)?;
+        if let Flow::Continue(s) = ret {
+            styles.insert(s.0, s.1);
+        } else {
             break;
         }
     }
-    Ok((styles, input))
+    Ok((styles, Consumed::Consumed(())))
 }
 
-fn style_property<I>(input: I) -> ParseResult<(Ident, ExprType), I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-    I: Debug,
-    I::Range: Debug,
+fn style_property<'a, I>() -> impl Parser<Input = I, Output = (Ident<'a>, ExprType<'a>)>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
 {
-    let prop = (
-        spaces().with(parser(ident)),
+    (
+        spaces().with(ident()),
         spaces().with(token('=')),
         spaces().with(parser(expr)),
-    );
-    prop.map(|v| (v.0, v.2)).parse_stream(input)
+    ).map(|v| (v.0, v.2))
 }
 
-fn op_prio(c: char) -> u8 {
-    match c {
-        '-' => 4,
-        '+' => 5,
-        '/' => 8,
-        '*' => 7,
-        _ => 255,
-    }
-}
-
-fn expr<I>(input: I) -> ParseResult<ExprType, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-    I: Debug,
-    I::Range: Debug,
+fn expr<'a, I>(input: &mut I) -> ParseResult<ExprType<'a>, I>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
 {
-    let (v, input) = parser(expr_value).parse_stream(input)?;
-    input.combine(|input| expr_inner(input, v, 255))
-}
+    let skip_spaces = || spaces().silent();
 
-fn expr_value<I>(input: I) -> ParseResult<ExprType, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-    I: Debug,
-    I::Range: Debug,
-{
-    let (neg, mut input) = try!(optional((position(), token('-'))).parse_lazy(input).into());
-
-    let (bracket, i) = try!(input.combine(|input| optional(token('(')).parse_lazy(input).into()));
-    input = i;
-
-    let v = if bracket.is_some() {
-        let (val, i) = input.combine(|input| parser(expr_value).parse_stream(input))?;
-        let (v, i) = try!(i.combine(move |input| {
-            (
-                parser(move |input| expr_inner(input, val.clone(), 255)),
-                token(')'),
-            ).map(|v| v.0)
-                .parse_lazy(input)
-                .into()
-        }));
-        input = i;
-        v
-    } else {
-        let (call, i) = try!(input.combine(|input| {
-            optional(try((position(), parser(ident), token('('))))
-                .parse_lazy(input)
-                .into()
-        }));
-        input = i;
-
-        if let Some((pos, call, _)) = call {
-            let (args, i) = try!(input.combine(|input| {
-                (
-                    sep_end_by(spaces().with(parser(expr)), spaces().with(token(','))),
-                    spaces().with(token(')')),
-                ).map(|v| v.0)
-                    .parse_lazy(input)
-                    .into()
-            }));
-            input = i;
-            ExprType {
-                expr: Expr::Call(call, args),
-                position: pos.into(),
-            }
-        } else {
-            let val = parser(value);
-
-            let (v, i) = try!(input.combine(|input| ((position(), val)).parse_lazy(input).into()));
-            input = i;
-
-            ExprType {
-                expr: Expr::Value(v.1.value),
-                position: v.0.into(),
-            }
-        }
-    };
-    let v = if let Some((pos, _)) = neg {
-        ExprType {
-            expr: Expr::Neg(Box::new(v)),
-            position: pos.into(),
-        }
-    } else {
-        v
-    };
-    Ok((v, input))
-}
-
-fn expr_inner<I>(input: I, mut v: ExprType, mut max: u8) -> ParseResult<ExprType, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-    I: Debug,
-    I::Range: Debug,
-{
-    let op_ex_o = choice!(token('+'), token('*'), token('-'), token('/'));
-
-    let (_, mut input) = spaces().parse_stream(input)?;
+    let (mut current, _) =
+        skip_spaces()
+        .with(parser(bool_ops))
+        .skip(skip_spaces())
+        .parse_stream(input)?;
 
     loop {
-        let op_ex = op_ex_o.clone();
-        let (op, i) = try!(input.combine(|input| {
-            look_ahead(optional(spaces().with(op_ex.clone())))
-                .parse_lazy(input)
-                .into()
-        }));
-        input = i;
-        if let Some(op) = op {
-            let p = op_prio(op);
-            if p > max {
-                break;
-            }
-            max = p;
-            let ((pos, op), i) = try!(input.combine(|input| {
-                spaces().with((position(), op_ex)).parse_lazy(input).into()
-            }));
-            input = i;
-            let (mut right, i) = try!(input.combine(|input| {
-                spaces().with(parser(expr_value)).parse_lazy(input).into()
-            }));
-            input = i;
-
-            let op_ex = op_ex_o.clone();
-            let (next_op, i) = try!(input.combine(|input| {
-                look_ahead(optional(spaces().with(op_ex.clone())))
-                    .parse_lazy(input)
-                    .into()
-            }));
-            input = i;
-            let p = next_op.map(|op| op_prio(op));
-            let should_break = if p.map_or(false, |p| p > max) {
-                let (nv, i) = input.combine(|input| {
-                    parser(move |input| expr_inner(input, right.clone(), p.unwrap()))
-                        .parse_stream(input)
-                })?;
-                input = i;
-                right = nv;
-                true
-            } else {
-                false
-            };
-
-            v = ExprType {
-                expr: match op {
-                    '+' => Expr::Add(Box::new(v), Box::new(right)),
-                    '-' => Expr::Sub(Box::new(v), Box::new(right)),
-                    '*' => Expr::Mul(Box::new(v), Box::new(right)),
-                    '/' => Expr::Div(Box::new(v), Box::new(right)),
-                    _ => unreachable!(),
-                },
-                position: pos.into(),
-            };
-            if should_break {
-                break;
-            }
-        } else {
-            break;
-        }
+        let (op, _) = match (position(), choice((
+                attempt(string("==")),
+                attempt(string("!=")),
+                attempt(string("<=")),
+                attempt(string(">=")),
+                string("<"),
+                string(">"),
+            )))
+            .skip(skip_spaces())
+            .parse_stream(input)
+        {
+            Ok(v) => v,
+            Err(_) => break,
+        };
+        let (other, _) = parser(bool_ops)
+            .skip(skip_spaces())
+            .parse_stream(input)?;
+        current = ExprType {
+            position: SourcePosition::into(op.0),
+            expr: match op.1 {
+                "==" => Expr::Equal(Box::new(current), Box::new(other)),
+                "!=" => Expr::NotEqual(Box::new(current), Box::new(other)),
+                "<=" => Expr::LessEqual(Box::new(current), Box::new(other)),
+                ">=" => Expr::GreaterEqual(Box::new(current), Box::new(other)),
+                "<" => Expr::Less(Box::new(current), Box::new(other)),
+                ">" => Expr::Greater(Box::new(current), Box::new(other)),
+                _ => unreachable!(),
+            },
+        };
     }
-    Ok((v, input))
+    Ok((current, Consumed::Consumed(())))
 }
 
-fn properties<I>(input: I) -> ParseResult<FnvHashMap<Ident, ValueType>, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
+fn bool_ops<'a, I>(input: &mut I) -> ParseResult<ExprType<'a>, I>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
 {
-    let properties = (
+    let skip_spaces = || spaces().silent();
+
+    let (mut current, _) = parser(term1)
+        .skip(skip_spaces())
+        .parse_stream(input)?;
+
+    loop {
+        let (op, _) = match (position(), choice((
+                attempt(string("&&")),
+                attempt(string("||")),
+                string("^"),
+            )))
+            .skip(skip_spaces())
+            .parse_stream(input)
+        {
+            Ok(v) => v,
+            Err(_) => break,
+        };
+        let (other, _) = parser(term1)
+            .skip(skip_spaces())
+            .parse_stream(input)?;
+        current = ExprType {
+            position: SourcePosition::into(op.0),
+            expr: match op.1 {
+                "&&" => Expr::And(Box::new(current), Box::new(other)),
+                "||" => Expr::Or(Box::new(current), Box::new(other)),
+                "^" => Expr::Xor(Box::new(current), Box::new(other)),
+                _ => unreachable!(),
+            },
+        };
+    }
+
+    Ok((current, Consumed::Consumed(())))
+}
+
+fn term1<'a, I>(input: &mut I) -> ParseResult<ExprType<'a>, I>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
+{
+    let skip_spaces = || spaces().silent();
+
+    let (mut current, _) = parser(term2)
+        .skip(skip_spaces())
+        .parse_stream(input)?;
+
+    loop {
+        let (op, _) = match (position(), choice((char('+'), char('-'))))
+            .skip(skip_spaces())
+            .parse_stream(input)
+        {
+            Ok(v) => v,
+            Err(_) => break,
+        };
+        let (other, _) = parser(term2)
+            .skip(skip_spaces())
+            .parse_stream(input)?;
+        current = ExprType {
+            position: SourcePosition::into(op.0),
+            expr: match op.1 {
+                '+' => Expr::Add(Box::new(current), Box::new(other)),
+                '-' => Expr::Sub(Box::new(current), Box::new(other)),
+                _ => unreachable!(),
+            },
+        };
+    }
+
+    Ok((current, Consumed::Consumed(())))
+}
+
+fn term2<'a, I>(input: &mut I) -> ParseResult<ExprType<'a>, I>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
+{
+    let skip_spaces = || spaces().silent();
+
+    let (mut current, _) = factor()
+        .skip(skip_spaces())
+        .parse_stream(input)?;
+
+    loop {
+        let (op, _) = match (position(), choice((char('*'), char('/'), char('%'))))
+            .skip(skip_spaces())
+            .parse_stream(input)
+        {
+            Ok(v) => v,
+            Err(_) => break,
+        };
+        let (other, _) = factor()
+            .skip(skip_spaces())
+            .parse_stream(input)?;
+        current = ExprType {
+            position: SourcePosition::into(op.0),
+            expr: match op.1 {
+                '*' => Expr::Mul(Box::new(current), Box::new(other)),
+                '/' => Expr::Div(Box::new(current), Box::new(other)),
+                '%' => Expr::Rem(Box::new(current), Box::new(other)),
+                _ => unreachable!(),
+            },
+        };
+    }
+    Ok((current, Consumed::Consumed(())))
+}
+
+fn factor<'a, I>() -> impl Parser<Input = I, Output = ExprType<'a>>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
+{
+    let skip_spaces = || spaces().silent();
+
+    let brackets = char('(')
+        .skip(skip_spaces())
+        .with(parser(expr))
+        .skip(skip_spaces())
+        .skip(char(')'));
+
+
+    let call = (ident(), char('(')
+        .skip(skip_spaces())
+        .with(sep_end_by(parser(expr).skip(skip_spaces()), char(',')))
+        .skip(skip_spaces())
+        .skip(char(')'))
+    ).map(|v| Expr::Call(v.0, v.1));
+
+    let float_to_int = string("int")
+        .expected("int cast")
+        .skip(string("("))
+        .skip(skip_spaces())
+        .with(parser(expr))
+        .map(|v| Expr::FloatToInt(Box::new(v)))
+        .skip(skip_spaces())
+        .skip(char(')'));
+    let int_to_float = string("float")
+        .expected("float cast")
+        .skip(string("("))
+        .skip(skip_spaces())
+        .with(parser(expr))
+        .map(|v| Expr::IntToFloat(Box::new(v)))
+        .skip(skip_spaces())
+        .skip(char(')'));
+
+    let not = char('!')
+        .skip(skip_spaces())
+        .with(parser(expr))
+        .map(|v| Expr::Not(Box::new(v)));
+
+    let neg = char('-')
+        .skip(skip_spaces())
+        .with(parser(expr))
+        .map(|v| Expr::Neg(Box::new(v)));
+
+    (
+        position(),
+        choice((
+            attempt(float_to_int),
+            attempt(int_to_float),
+            attempt(brackets.map(|v| v.expr)),
+            attempt(call),
+            attempt(value().map(|v| Expr::Value(v.value))),
+            attempt(not),
+            attempt(neg),
+        ))
+    ).map(|v| ExprType {
+        position: SourcePosition::into(v.0),
+        expr: v.1,
+    })
+}
+
+fn properties<'a, I>() -> impl Parser<Input = I, Output = FnvHashMap<Ident<'a>, ValueType<'a>>>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
+{
+    (
         token('('),
-        sep_end_by(parser(property), token(',')),
+        sep_end_by(property(), token(',')),
         spaces().with(token(')')),
-    );
-    properties.map(|(_, l, _)| l).parse_stream(input)
+    ).map(|(_, l, _)| l)
 }
 
-fn property<I>(input: I) -> ParseResult<(Ident, ValueType), I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
+fn property<'a, I>() -> impl Parser<Input = I, Output = (Ident<'a>, ValueType<'a>)>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
 {
-    let prop = (
-        spaces().with(parser(ident)),
+    (
+        spaces().with(ident()),
         spaces().with(token('=')),
-        spaces().with(parser(value)),
-    );
-    prop.map(|v| (v.0, v.2)).parse_stream(input)
+        spaces().with(value()),
+    ).map(|v| (v.0, v.2))
 }
 
-fn value<I>(input: I) -> ParseResult<ValueType, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
+fn value<'a, I>() -> impl Parser<Input = I, Output = ValueType<'a>>
+    where
+        I: Debug + Stream<Item=char, Position=SourcePosition, Range = &'a str> + RangeStream + 'a,
+        <I as StreamOnce>::Error: combine::ParseError<I::Item, I::Range, I::Position>,
 {
-    let boolean = parser(parse_bool).map(|v| Value::Boolean(v));
-    let float = parser(parse_float).map(|v| Value::Float(v));
-    let integer = parser(parse_integer).map(|v| Value::Integer(v));
+    let boolean = parse_bool().map(|v| Value::Boolean(v));
+    let float = parse_float().map(|v| Value::Float(v));
+    let integer = parse_integer().map(|v| Value::Integer(v));
 
-    let string = parser(parse_string).map(|v| Value::String(v));
+    let string = parse_string().map(|v| Value::String(v));
 
-    let variable = parser(ident).map(|v| Value::Variable(v));
+    let variable = ident().map(|v| Value::Variable(v));
 
     (
         position(),
         try(boolean)
             .or(try(float))
             .or(try(integer))
-            .or(try(string))
-            .or(variable),
+            .or(try(variable))
+            .or(string),
     ).map(|v| {
             ValueType {
                 value: v.1,
                 position: SourcePosition::into(v.0),
             }
         })
-        .parse_stream(input)
-}
-
-fn parse_bool<I>(input: I) -> ParseResult<bool, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-{
-    let (t, input) = try!(optional(string("true")).parse_lazy(input).into());
-    if t.is_some() {
-        return Ok((true, input));
-    }
-    let (_, input) = try!(input.combine(|input| string("false").parse_lazy(input).into()));
-    Ok((false, input))
-}
-
-fn parse_float<I>(input: I) -> ParseResult<f64, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-{
-    let mut buf = String::new();
-
-    let (sign, input) = try!(optional(char('-')).parse_lazy(input).into());
-    if let Some(s) = sign {
-        buf.push(s);
-    }
-
-    let (val, input): (String, _) =
-        try!(input.combine(|input| many1(digit()).parse_lazy(input).into()));
-    buf.push_str(&val);
-    let (val, input): (String, _) = try!(input.combine(|input| {
-        char('.').with(many1(digit())).parse_lazy(input).into()
-    }));
-    buf.push('.');
-    buf.push_str(&val);
-
-    let val: f64 = match buf.parse() {
-        Ok(val) => val,
-        Err(err) => {
-            return Err(input.map(|input| {
-                ParseError::new(input.position(), Error::Other(err.into()))
-            }))
-        }
-    };
-
-    Ok((val, input))
-}
-
-fn parse_integer<I>(input: I) -> ParseResult<i32, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-{
-    let mut buf = String::new();
-
-    let (sign, input) = try!(optional(char('-')).parse_lazy(input).into());
-    if let Some(s) = sign {
-        buf.push(s);
-    }
-
-    let (val, input): (String, _) =
-        try!(input.combine(|input| many1(digit()).parse_lazy(input).into()));
-    buf.push_str(&val);
-
-    let val: i32 = match buf.parse() {
-        Ok(val) => val,
-        Err(err) => {
-            return Err(input.map(|input| {
-                ParseError::new(input.position(), Error::Other(err.into()))
-            }))
-        }
-    };
-
-    Ok((val, input))
-}
-
-fn parse_string<I>(input: I) -> ParseResult<String, I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-{
-    (
-        token('"'),
-        many(
-            try(string(r#"\""#).map(|_| '"'))
-                .or(try(string(r#"\t"#).map(|_| '\t')))
-                .or(try(string(r#"\n"#).map(|_| '\n')))
-                .or(try(string(r#"\r"#).map(|_| '\r')))
-                .or(try(string(r#"\\"#).map(|_| '\\')))
-                .or(satisfy(|c| c != '"')),
-        ),
-        token('"'),
-    ).map(|v| v.1)
-        .parse_stream(input)
-}
-
-fn skip_comment<I>(input: I) -> ParseResult<(), I>
-where
-    I: Stream<Item = char, Position = SourcePosition>,
-{
-    string("//")
-        .with(skip_many(satisfy(|c| c != '\n')))
-        .with(spaces())
-        .map(|_| ())
-        .parse_stream(input)
 }
 
 #[cfg(test)]

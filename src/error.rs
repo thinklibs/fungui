@@ -1,23 +1,27 @@
 
-use syntax::Position;
 
-error_chain! {
-    types {
-        Error, ErrorKind, ResultExt, Result;
-    }
-    links {
-    }
-
-    foreign_links {
-    }
-    errors {
-        UnknownVariable(name: String, position: Position) {}
-        CantOp(op: String,  position: Position) {}
-        UnknownFunction(name: String, position: Position) {
-            display("Unknown function {} at {}", name, position)
-        }
-        MissingParameter(name: &'static str) {}
-        IncorrectType(name: &'static str, wanted: &'static str) {}
-        FunctionFailed(position: Position) {}
+#[derive(Debug)]
+pub enum Error<'a> {
+    UnknownVariable {
+        name: &'a str,
+    },
+    IncompatibleTypeOp {
+        op: &'static str,
+        ty: &'static str,
+    },
+    IncompatibleTypesOp {
+        op: &'static str,
+        left_ty: &'static str,
+        right_ty: &'static str,
+    },
+    Custom {
+        reason: String,
+    },
+    CustomStatic {
+        reason: &'static str,
+    },
+    MissingParameter {
+        position: i32,
+        name: &'static str,
     }
 }

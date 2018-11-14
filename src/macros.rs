@@ -12,9 +12,9 @@
 /// # Examples
 ///
 /// ```rust
-/// # #[macro_use] extern crate stylish;
+/// # #[macro_use] extern crate fungui;
 /// # fn main() {
-/// # let _ : stylish::Node<()> =
+/// # let _ : fungui::Node<fungui::tests::TestExt> =
 /// node!{
 ///     panel(x=5, y=16, width=300, height=50) {
 ///         icon
@@ -27,9 +27,9 @@
 /// ```
 ///
 /// ```rust
-/// # #[macro_use] extern crate stylish;
+/// # #[macro_use] extern crate fungui;
 /// # fn main() {
-/// # let _ : stylish::Node<()> =
+/// # let _ : fungui::Node<fungui::tests::TestExt> =
 /// node!{
 ///     @text("Hello world")
 /// };
@@ -153,20 +153,13 @@ macro_rules! node {
 /// Allows for the creation of queries in a similar format
 /// as style rules.
 ///
-/// The syntax matches the node style format apart from
-/// a few differences.
-///
-/// * Text can't be inline, it must be wrapped with `@text("hello")`
-/// * String attributes currently need to be `.to_owned()` as
-///   it expects `String` not `&str`.
-///
 /// # Examples
 ///
 /// ```rust
-/// # #[macro_use] extern crate stylish;
-/// # use stylish::Node;
+/// # #[macro_use] extern crate fungui;
+/// # use fungui::Node;
 /// # fn main() {
-/// # let node : Node<()> =
+/// # let node : Node<fungui::tests::TestExt> =
 /// # node!{
 /// #     panel(x=5, y=16, width=300, height=50) {
 /// #         icon
@@ -175,10 +168,14 @@ macro_rules! node {
 /// #         }
 /// #     }
 /// # };
+/// let res = query!(node, panel(width=300) > title > @text)
+///         .next();
 /// assert_eq!(
-///     query!(node, panel(width=300) > title > @text)
-///         .next().and_then(|v| v.text()),
-///     Some("Testing".to_owned())
+///     &*res
+///         .as_ref()
+///         .and_then(|v| v.text())
+///         .unwrap(),
+///     "Testing"
 /// );
 /// # }
 /// ```
@@ -243,7 +240,7 @@ macro_rules! query {
 
 #[test]
 fn test_query_macro() {
-    let node: super::Node<()> = node!{
+    let node: super::Node<::tests::TestExt> = node!{
         test {
             inner {
                 @text("wrong".to_owned())
@@ -253,10 +250,12 @@ fn test_query_macro() {
             }
         }
     };
-    assert_eq!(
-        query!(node, test > inner(a=5) > @text)
-            .next()
-            .and_then(|v| v.text()),
-        Some("hello".to_owned())
+    let res = query!(node, test > inner(a=5) > @text)
+            .next();
+    assert!(
+        res
+        .as_ref()
+        .and_then(|v| v.text())
+        .map_or(false, |v| &*v == "hello")
     )
 }

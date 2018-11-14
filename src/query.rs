@@ -1,32 +1,115 @@
 
 use super::*;
+use std::borrow::Cow;
 
-pub struct Query<RInfo> {
-    pub(crate) root: Node<RInfo>,
-    pub(crate) rules: Vec<Rule>,
+pub struct Query<'a, E: Extension + 'a> {
+    pub(crate) root: Node<E>,
+    pub(crate) rules: Vec<Rule<'a, E>>,
     pub(crate) location: Option<AtLocation>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct AtLocation {
     pub(crate) x: i32,
     pub(crate) y: i32,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) enum Rule {
+pub(crate) enum Rule<'a, E: Extension + 'a> {
     /// Matches against child nodes
     Child,
     /// Matches against the element's name
-    Name(String),
+    Name(Cow<'a, str>),
     /// Matches against a property
-    Property(String, Value),
+    Property(Cow<'a, str>, ValueRef<'a, E>),
     /// Matches against a text node
     Text,
 }
 
-impl<RInfo> Query<RInfo> {
-    pub(super) fn new(node: Node<RInfo>) -> Query<RInfo> {
+pub enum ValueRef<'a, E: Extension + 'a> {
+    Boolean(bool),
+    Integer(i32),
+    Float(f64),
+    String(Cow<'a, str>),
+    ExtValue(&'a E::Value),
+}
+
+impl <'a, E> Clone for ValueRef<'a, E>
+    where E: Extension + 'a
+{
+    fn clone(&self) -> Self {
+        match self {
+            ValueRef::Boolean(v) => ValueRef::Boolean(*v),
+            ValueRef::Integer(v) => ValueRef::Integer(*v),
+            ValueRef::Float(v) => ValueRef::Float(*v),
+            ValueRef::String(v) => ValueRef::String(v.clone()),
+            ValueRef::ExtValue(v) => ValueRef::ExtValue(*v),
+        }
+    }
+}
+
+// impl <'a, E> Copy for ValueRef<'a, E>
+//     where E: Extension + 'a
+// {}
+
+pub trait AsValueRef<'a, E: Extension> {
+    fn as_value_ref(self) -> ValueRef<'a, E>;
+}
+
+impl <'a, E> AsValueRef<'a, E> for &'a str
+    where E: Extension
+{
+    fn as_value_ref(self) -> ValueRef<'a, E> {
+        ValueRef::String(self.into())
+    }
+}
+impl <E> AsValueRef<'static, E> for String
+    where E: Extension
+{
+    fn as_value_ref(self) -> ValueRef<'static, E> {
+        ValueRef::String(self.into())
+    }
+}
+
+impl <'a, E> AsValueRef<'a, E> for ValueRef<'a, E>
+    where E: Extension
+{
+    fn as_value_ref(self) -> ValueRef<'a, E> {
+        self
+    }
+}
+impl <'a, E> AsValueRef<'a, E> for i32
+    where E: Extension
+{
+    fn as_value_ref(self) -> ValueRef<'a, E> {
+        ValueRef::Integer(self)
+    }
+}
+impl <'a, E> AsValueRef<'a, E> for f64
+    where E: Extension
+{
+    fn as_value_ref(self) -> ValueRef<'a, E> {
+        ValueRef::Float(self)
+    }
+}
+impl <'a, E> AsValueRef<'a, E> for f32
+    where E: Extension
+{
+    fn as_value_ref(self) -> ValueRef<'a, E> {
+        ValueRef::Float(self as f64)
+    }
+}
+impl <'a, E> AsValueRef<'a, E> for bool
+    where E: Extension
+{
+    fn as_value_ref(self) -> ValueRef<'a, E> {
+        ValueRef::Boolean(self)
+    }
+}
+
+impl<'a, E> Query<'a, E>
+    where E: Extension + 'a
+{
+    pub(super) fn new(node: Node<E>) -> Query<'a, E> {
         Query {
             root: node,
             rules: vec![],
@@ -34,35 +117,44 @@ impl<RInfo> Query<RInfo> {
         }
     }
 
-    pub fn name<S>(mut self, name: S) -> Query<RInfo>
-    where
-        S: Into<String>,
+    /// Converts an empty query into an owned one
+    pub fn into_owned(self) -> Query<'static, E> {
+        assert!(self.rules.is_empty());
+        Query {
+            root: self.root,
+            rules: vec![],
+            location: self.location,
+        }
+    }
+
+    pub fn name<S>(mut self, name: S) -> Query<'a, E>
+        where S: Into<Cow<'a, str>>,
     {
         self.rules.push(Rule::Name(name.into()));
         self
     }
 
-    pub fn text(mut self) -> Query<RInfo> {
+    pub fn text(mut self) -> Query<'a, E> {
         self.rules.push(Rule::Text);
         self
     }
 
-    pub fn property<S, V>(mut self, key: S, val: V) -> Query<RInfo>
+    pub fn property<S, V>(mut self, key: S, val: V) -> Query<'a, E>
     where
-        V: PropertyValue,
-        S: Into<String>,
+        V: AsValueRef<'a, E> + 'a,
+        S: Into<Cow<'a, str>>,
     {
         self.rules
-            .push(Rule::Property(key.into(), val.convert_into()));
+            .push(Rule::Property(key.into(), val.as_value_ref()));
         self
     }
 
-    pub fn child(mut self) -> Query<RInfo> {
+    pub fn child(mut self) -> Query<'a, E> {
         self.rules.push(Rule::Child);
         self
     }
 
-    pub fn matches(self) -> QueryIterator<RInfo> {
+    pub fn matches(self) -> QueryIterator<'a, E> {
         let rect = if let Some(loc) = self.location {
             let rect = self.root.render_position().unwrap_or(Rect {
                 x: 0,
@@ -98,28 +190,18 @@ impl<RInfo> Query<RInfo> {
         }
     }
 
-    pub fn next(self) -> Option<Node<RInfo>> {
+    pub fn next(self) -> Option<Node<E>> {
         self.matches().next()
     }
 }
 
-pub struct QueryIterator<RInfo> {
-    nodes: Vec<(Node<RInfo>, isize, Rect)>,
-    rules: Vec<Rule>,
+pub struct QueryIterator<'a, E: Extension + 'a> {
+    nodes: Vec<(Node<E>, isize, Rect)>,
+    rules: Vec<Rule<'a, E>>,
     location: Option<AtLocation>,
 }
 
-impl<RInfo> Clone for QueryIterator<RInfo> {
-    fn clone(&self) -> Self {
-        QueryIterator {
-            nodes: Clone::clone(&self.nodes),
-            rules: Clone::clone(&self.rules),
-            location: self.location,
-        }
-    }
-}
-
-fn num_children<T>(node: &Node<T>) -> usize {
+fn num_children<E: Extension>(node: &Node<E>) -> usize {
     let inner = node.inner.borrow();
     if let NodeValue::Element(ref e) = inner.value {
         e.children.len()
@@ -128,14 +210,16 @@ fn num_children<T>(node: &Node<T>) -> usize {
     }
 }
 
-impl<RInfo> Iterator for QueryIterator<RInfo> {
-    type Item = Node<RInfo>;
-    fn next(&mut self) -> Option<Node<RInfo>> {
-        enum Action<RInfo> {
+impl<'a, E> Iterator for QueryIterator<'a, E>
+    where E: Extension
+{
+    type Item = Node<E>;
+    fn next(&mut self) -> Option<Node<E>> {
+        enum Action<E: Extension> {
             Nothing,
             Pop,
-            Push(Node<RInfo>, Rect),
-            Remove(Node<RInfo>),
+            Push(Node<E>, Rect),
+            Remove(Node<E>),
         }
 
         'search: loop {
@@ -152,24 +236,16 @@ impl<RInfo> Iterator for QueryIterator<RInfo> {
                                 let p_rect = cur.2;
                                 let p = node.parent()?.inner;
                                 let inner = p.borrow();
-                                let p_obj = match inner.render_object.as_ref() {
-                                    Some(v) => v,
-                                    None => continue 'search,
-                                };
                                 let self_inner = node.inner.borrow();
-                                let s_obj = match self_inner.render_object.as_ref() {
-                                    Some(v) => v,
-                                    None => continue 'search,
-                                };
 
-                                rect.x += s_obj.draw_rect.x;
-                                rect.y += s_obj.draw_rect.y;
-                                rect.width = s_obj.draw_rect.width;
-                                rect.height = s_obj.draw_rect.height;
+                                rect.x += self_inner.draw_rect.x;
+                                rect.y += self_inner.draw_rect.y;
+                                rect.width = self_inner.draw_rect.width;
+                                rect.height = self_inner.draw_rect.height;
 
-                                rect.x += p_obj.scroll_position.0 as i32;
-                                rect.y += p_obj.scroll_position.1 as i32;
-                                if p_obj.clip_overflow {
+                                rect.x += inner.scroll_position.0 as i32;
+                                rect.y += inner.scroll_position.1 as i32;
+                                if inner.clip_overflow {
                                     if rect.x < p_rect.x {
                                         rect.width -= p_rect.x - rect.x;
                                         rect.x = p_rect.x;
@@ -233,15 +309,28 @@ impl<RInfo> Iterator for QueryIterator<RInfo> {
 
             let mut cur = node.clone();
             for rule in self.rules.iter().rev() {
-                match *rule {
+                match rule {
                     Rule::Text => if let NodeValue::Element(_) = cur.inner.borrow().value {
                         continue 'search;
                     },
-                    Rule::Name(ref n) => if !cur.name().map_or(false, |v| *v == *n) {
+                    Rule::Name(n) => if let NodeValue::Element(ref e) = cur.inner.borrow().value {
+                        if e.name != *n {
+                            continue 'search;
+                        }
+                    } else {
                         continue 'search;
                     },
                     Rule::Property(ref k, ref val) => {
-                        if !cur.get_property::<Value>(k).map_or(false, |v| v == *val) {
+                        let inner = cur.inner.borrow();
+                        let ok = match (inner.properties.get(&**k), val) {
+                            (Some(Value::Integer(a)), ValueRef::Integer(b)) => a == b,
+                            (Some(Value::Float(a)), ValueRef::Float(b)) => a == b,
+                            (Some(Value::Boolean(a)), ValueRef::Boolean(b)) => a == b,
+                            (Some(Value::String(a)), ValueRef::String(b)) => a == b,
+                            (Some(Value::ExtValue(a)), ValueRef::ExtValue(b)) => a == *b,
+                            _ => false,
+                        };
+                        if !ok {
                             continue 'search;
                         }
                     }
@@ -273,16 +362,16 @@ panel {
 
 "#,
     ).unwrap();
-    let node = Node::<()>::from_document(doc);
+    let node = Node::<tests::TestExt>::from_document(doc);
 
     for n in node.query()
         .name("panel")
         .child()
         .name("icon")
-        .property("type", "warning".to_owned())
+        .property("type", "warning")
         .matches()
     {
         assert_eq!(n.name(), Some("icon".to_owned()));
-        assert_eq!(n.get_property::<String>("type"), Some("warning".to_owned()));
+        assert_eq!(&*n.get_property_ref::<String>("type").unwrap(), "warning");
     }
 }
