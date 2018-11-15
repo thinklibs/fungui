@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 
 pub(crate) type SFunc<E> = Box<for<'a> Fn(&mut (Iterator<Item=Result<Value<E>, Error<'a>>> + 'a)) -> Result<Value<E>, Error<'a>> + 'static>;
 
+/// Stores rules, functions and layouts needed for computing styles
 pub struct Styles<E: Extension> {
     pub(crate) _ext: ::std::marker::PhantomData<E>,
     pub(crate) static_keys: FnvHashMap<&'static str, StaticKey>,
@@ -21,7 +22,8 @@ impl <E: Extension> Styles<E> {
     pub fn key_was_used(&self, key: &StaticKey) -> bool {
         self.used_keys.contains(key)
     }
-    pub fn load_styles<'a>(&mut self, name: &str, doc: syntax::style::Document<'a>) -> Result<(), syntax::PError<'a>>{
+
+    pub(crate) fn load_styles<'a>(&mut self, name: &str, doc: syntax::style::Document<'a>) -> Result<(), syntax::PError<'a>>{
         for rule in doc.rules {
             let id = self.next_rule_id;
             self.next_rule_id = self.next_rule_id.wrapping_add(1);
@@ -223,12 +225,17 @@ impl <E> Rules<E>
     }
 }
 
+/// A rule which contains a set of matchers to compare against
+/// the properties of a node and parents and a set of styles to
+/// apply if matched.
 pub struct Rule<E: Extension> {
     id: u32,
     name: String,
-    pub matchers: Vec<(RuleKey, Vec<(String, ValueMatcher)>)>,
+    pub(crate) matchers: Vec<(RuleKey, Vec<(String, ValueMatcher)>)>,
+    #[doc(hidden)]
+    // Used by the `eval!` macro
     pub styles: FnvHashMap<StaticKey, Expr<E>>,
-    pub uses_parent_size: bool,
+    pub(crate) uses_parent_size: bool,
 }
 
 impl <E> Rule<E>

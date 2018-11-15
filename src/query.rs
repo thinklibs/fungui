@@ -2,6 +2,11 @@
 use super::*;
 use std::borrow::Cow;
 
+/// A query on a node that can be used to look up nodes
+/// in the same way that styles do.
+///
+/// The `query!` macro is a useful wrapper around this
+/// to match the syntax used in styles.
 pub struct Query<'a, E: Extension + 'a> {
     pub(crate) root: Node<E>,
     pub(crate) rules: Vec<Rule<'a, E>>,
@@ -46,10 +51,6 @@ impl <'a, E> Clone for ValueRef<'a, E>
         }
     }
 }
-
-// impl <'a, E> Copy for ValueRef<'a, E>
-//     where E: Extension + 'a
-// {}
 
 pub trait AsValueRef<'a, E: Extension> {
     fn as_value_ref(self) -> ValueRef<'a, E>;
@@ -109,6 +110,7 @@ impl <'a, E> AsValueRef<'a, E> for bool
 impl<'a, E> Query<'a, E>
     where E: Extension + 'a
 {
+    #[inline]
     pub(super) fn new(node: Node<E>) -> Query<'a, E> {
         Query {
             root: node,
@@ -118,6 +120,7 @@ impl<'a, E> Query<'a, E>
     }
 
     /// Converts an empty query into an owned one
+    #[inline]
     pub fn into_owned(self) -> Query<'static, E> {
         assert!(self.rules.is_empty());
         Query {
@@ -127,6 +130,9 @@ impl<'a, E> Query<'a, E>
         }
     }
 
+    /// Matches against the name of the current node
+    /// if it is an element, fails otherwise.
+    #[inline]
     pub fn name<S>(mut self, name: S) -> Query<'a, E>
         where S: Into<Cow<'a, str>>,
     {
@@ -134,11 +140,17 @@ impl<'a, E> Query<'a, E>
         self
     }
 
+    /// Matches against a text node otherwise it fails
+    #[inline]
     pub fn text(mut self) -> Query<'a, E> {
         self.rules.push(Rule::Text);
         self
     }
 
+    /// Matches against a property on the current node compares
+    /// the value. Fails if the property is missing or the value
+    /// doesn't match.
+    #[inline]
     pub fn property<S, V>(mut self, key: S, val: V) -> Query<'a, E>
     where
         V: AsValueRef<'a, E> + 'a,
@@ -149,11 +161,18 @@ impl<'a, E> Query<'a, E>
         self
     }
 
+    /// Moves the matcher to a child node.
+    ///
+    /// All other methods (`name`/`text`/`property`) will
+    /// apply to the child after this
+    #[inline]
     pub fn child(mut self) -> Query<'a, E> {
         self.rules.push(Rule::Child);
         self
     }
 
+    /// Returns a iterator over the possible matches
+    #[inline]
     pub fn matches(self) -> QueryIterator<'a, E> {
         let rect = if let Some(loc) = self.location {
             let rect = self.root.render_position().unwrap_or(Rect {
@@ -190,6 +209,10 @@ impl<'a, E> Query<'a, E>
         }
     }
 
+    /// Returns a single match if any.
+    ///
+    /// Alias for `matches().next()`
+    #[inline]
     pub fn next(self) -> Option<Node<E>> {
         self.matches().next()
     }
@@ -201,6 +224,7 @@ pub struct QueryIterator<'a, E: Extension + 'a> {
     location: Option<AtLocation>,
 }
 
+#[inline]
 fn num_children<E: Extension>(node: &Node<E>) -> usize {
     let inner = node.inner.borrow();
     if let NodeValue::Element(ref e) = inner.value {

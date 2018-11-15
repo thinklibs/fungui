@@ -1,3 +1,166 @@
+//! FunGUI is a UI layout system that seperates the description of the interface and
+//! the styling/layout.
+//!
+//! In FunGUI there are two main systems that come into play that the
+//! rest is built around: Nodes and Styles.
+//!
+//! # Nodes
+//!
+//! Nodes are used to describe the user interface without any information
+//! about how it should look, only the structure. There are two types of
+//! nodes: Elements and Text.
+//!
+//! Elements are simply a name which could be anything, there are no special
+//! names as everything is controled by the style rules. Elements may contain
+//! child nodes.
+//!
+//! Text as the name implies is just text. Unlike elements, text may not
+//! have any child nodes.
+//!
+//! Any node may have properties on it. Properties are used to provide
+//! configuration to a node which is useful if you use the same node type
+//! multiple times. For example an `url` property may be used on a text
+//! node to allow the style rules to color it differently or make it clickable.
+//!
+//! ## Example
+//!
+//! An example of the node format:
+//!
+//! ```rust
+//! # extern crate fungui_syntax;
+//! # fungui_syntax::desc::Document::parse(r##"
+//! alert(level="warning") {
+//!     title {
+//!         "This is an alert"
+//!     }
+//!     content {
+//!         "If you would like more info click "
+//!         "here"(url="http://....")
+//!         "."
+//!     }
+//!     buttons {
+//!         button(focused=true) {
+//!             "Accept"
+//!         }
+//!         button {
+//!             "Ignore"
+//!         }
+//!     }
+//! }
+//! # "##).unwrap();
+//! ```
+//!
+//! # Styles
+//!
+//! Styles are used to define the behaviour of a node. This can be something like
+//! how the node will render or how the node will react to events.
+//!
+//! Styles apply using matching rules to find what nodes they will apply too. Rules
+//! can specific a hierarchy of nodes and what properties the node should have and
+//! their values. This allows for a `title` inside an `alert` to act differently to
+//! a `title` inside an `window` for example.
+//!
+//! Once a match is found the style rules are applied to the node. Rules can be a
+//! simple constant value or an expression. Expressions perform basic math (`+-/*%`)
+//! and boolean operations (`|| && <= ` etc), reference properties that were matched
+//! and execute functions. Functions can be used for complex properties instead of
+//! spliting them across multiple rules.
+//!
+//! ## Variables and types
+//!
+//! Variables are typed and floats/integers are treated as seperate and not casted
+//! automatically, this includes constants in style rules as well. For constants
+//! defining a number as `5` will be an integer whilst `5.0` will be a float. For
+//! variables you can cast using `int(val)` or `float(val)`.
+//!
+//! ### Special variables
+//!
+//! There are two special variables that can be used without using them in a matching
+//! rule: `parent_width` and `parent_height`. These allow you to size things relative
+//! to the parent's size without needing a custom layout to handle it. Whilst these
+//! are useful in some cases they do come with a larger cost. In order to handle this
+//! the interface may have to re-run the layout system multiple to resolve the variables
+//! causing a slowdown however this will generally only happen the first time the
+//! node has its layout computed.
+//!
+//! ## Example
+//!
+//! An example of the style format:
+//!
+//! ```rust
+//! # extern crate fungui_syntax;
+//! # fungui_syntax::style::Document::parse(r##"
+//! alert {
+//!     center = true,
+//!     layout = "rows",
+//!     width = 500,
+//!     height = 400,
+//! }
+//! alert(level="warning") {
+//!     background_color = rgb(255, 255, 0),
+//! }
+//!
+//! alert > title {
+//!     layout = "lined",
+//!     width = parent_width,
+//! }
+//! alert > title > @text {
+//!     font_color = rgb(0, 0, 0),
+//!     font_size = 24,
+//! }
+//!
+//! alert > content {
+//!     layout = "lined",
+//!     width = parent_width,
+//! }
+//! alert > content > @text {
+//!     font_color = rgb(0, 0, 0),
+//!     font_size = 16,
+//! }
+//! alert > content > @text(url=url) {
+//!     font_color = rgb(0, 120, 0),
+//!     on_mouse_up = action("visit", url),
+//! }
+//! # "##).unwrap();
+//! ```
+//!
+//! # Layouts
+//!
+//! Layouts take some of the style rules and use that to position and size a node.
+//! These can be added via `add_layout_engine` and selected using the `layout` style
+//! property.
+//!
+//! # Extension
+//!
+//! The `Extension` trait paired with the `RenderVisitor` trait is the main way that
+//! is used to actually make the user interface do something. By itself FunGUI only
+//! does layout, the extension trait can be used to add events and rendering by adding
+//! its own properties to use in style rules. In UniverCity these are things like
+//! `image` and `background_color` for rendering and `on_mouse_down` for events where
+//! events are lua code defined inline with the styles:
+//!
+//! ```ignore
+//! button {
+//!     border_width = border_width(15.0),
+//!     border = border_image("ui/button", 15, 15, true),
+//!     shadow = shadow(2.0, 2.0, rgba(0, 0, 0, 0.3), 3.0, 0.0, "outset"),
+//!     layout = "center",
+//!     can_hover = true,
+//! }
+//!
+//! button(theme="blueprint") {
+//!     border_width = border_width(15.0),
+//!     border = border_image("ui/button", 15, 15, true),
+//!     tint = rgba(0, 255, 255, 0.4),
+//! }
+//! button(on_click=click) {
+//!     on_mouse_up = list(click, "init#
+//!         audio.play_sound('click')
+//!         return true
+//!     "),
+//! }
+//! ```
+
 
 #![warn(missing_docs)]
 
@@ -6,7 +169,8 @@ extern crate fungui_syntax as syntax;
 extern crate ref_filter_map;
 extern crate bitflags;
 
-pub mod query;
+mod query;
+pub use query::Query;
 mod error;
 pub use error::Error;
 #[macro_use]
@@ -22,6 +186,7 @@ use layout::*;
 
 pub use layout::{
     LayoutEngine, ChildAccess,
+    NodeAccess,
     X, Y, WIDTH, HEIGHT
 };
 
@@ -37,9 +202,15 @@ use std::hash::{Hash, Hasher};
 use bitflags::bitflags;
 pub use syntax::{format_error, format_parse_error};
 
-pub type SResult<'a, T> = Result<T, Error<'a>>;
+/// An alias for a common return type used in FunGUI
+pub type FResult<'a, T> = Result<T, Error<'a>>;
 
 /// An unchanging key
+///
+/// `Hash` and `Eq` are based on the pointer instead of
+/// the value of the string. Its recomended to create this
+/// via `static` to make sure that it always points to the
+/// same thing.
 #[derive(Clone, Copy, Debug, Eq)]
 pub struct StaticKey(pub &'static str);
 
@@ -57,41 +228,119 @@ impl Hash for StaticKey {
 }
 
 bitflags! {
+    /// Flags used to mark certain properties as dirty/changed
     pub struct DirtyFlags: u32 {
+        /// Marks the node's position as changed
         const POSITION = 0b0000_0001;
+        /// Marks the node's size as changed
         const SIZE     = 0b0000_0010;
+        /// Marks the node's scroll position as changed
         const SCROLL   = 0b0000_0100;
+        /// Marks the node's layout as changed
         const LAYOUT   = 0b0000_1000;
+        /// Marks the node's text as changed
         const TEXT     = 0b0001_0000;
+        /// Marks the node's children as changed
         const CHILDREN = 0b0010_0000;
 
         // Extra ones for layouts to use
+        /// Extra flag for layouts to use
         const LAYOUT_1 = 0b0000_1000_0000_0000_0000_0000_0000_0000;
+        /// Extra flag for layouts to use
         const LAYOUT_2 = 0b0000_0100_0000_0000_0000_0000_0000_0000;
+        /// Extra flag for layouts to use
         const LAYOUT_3 = 0b0000_0010_0000_0000_0000_0000_0000_0000;
+        /// Extra flag for layouts to use
         const LAYOUT_4 = 0b0000_0001_0000_0000_0000_0000_0000_0000;
+        /// All extra flags for layouts
         const LAYOUT_ALL   = Self::LAYOUT_1.bits | Self::LAYOUT_2.bits | Self::LAYOUT_3.bits | Self::LAYOUT_4.bits;
         // Extra ones for extensions to use
+        /// Extra flag for extensions to use
         const EXT_1 = 0b1000_0000_0000_0000_0000_0000_0000_0000;
+        /// Extra flag for extensions to use
         const EXT_2 = 0b0100_0000_0000_0000_0000_0000_0000_0000;
+        /// Extra flag for extensions to use
         const EXT_3 = 0b0010_0000_0000_0000_0000_0000_0000_0000;
+        /// Extra flag for extensions to use
         const EXT_4 = 0b0001_0000_0000_0000_0000_0000_0000_0000;
+        /// All extra flags for extensions
         const EXT_ALL   = Self::EXT_1.bits | Self::EXT_2.bits | Self::EXT_3.bits | Self::EXT_4.bits;
     }
 }
 
+/// Extensions extend stylish to allow custom style properties to be added
 pub trait Extension {
+    /// The type of the data that will be stored on every node
+    ///
+    /// Can be acccessed via the `.ext` field on `NodeInner`
     type NodeData: Sized;
+    /// The type of the extra Values that will be used to extend
+    /// the fungui `Value` in `ExtValue` type.
+    ///
+    /// This is normally an enum
     type Value: Clone + PartialEq + Sized;
 
+    /// Creates a new empty `NodeData` to be stored on a Node.
     fn new_data() -> Self::NodeData;
 
+    /// Called to add new style keys that can be used by style rules
+    ///
+    /// # Example
+    /// ```ignore
+    /// static MY_PROP: StaticKey = StaticKey("my_prop");
+    ///
+    /// // ...
+    ///
+    /// fn style_properties<'a, F>(mut prop: F)
+    ///     where F: FnMut(StaticKey) + 'a
+    /// {
+    ///     prop(MY_PROP);
+    /// }
+    ///
+    /// ```
     fn style_properties<'a, F>(prop: F)
         where F: FnMut(StaticKey) + 'a;
 
+    /// Called to apply a given style rule on a node
+    ///
+    /// Its recomended to use the `eval!` macro to check for relevant properties
+    /// as it also skips ones that have already been set by a another rule.
+    ///
+    /// # Example
+    /// ```ignore
+    ///
+    /// fn update_child_data(&mut self, styles: &Styles<E>, nc: &NodeChain<E>, rule: &Rule<E>, data: &mut Self::ChildData) -> DirtyFlags {
+    ///     let mut flags = DirtyFlags::empty();
+    ///     eval!(styles, nc, rule.X => val => {
+    ///         let new = val.convert();
+    ///         if data.x != new {
+    ///             data.x = new;
+    ///             flags |= DirtyFlags::POSITION;
+    ///         }
+    ///     });
+    ///     flags
+    /// }
+    /// ```
     fn update_data(styles: &Styles<Self>, nc: &NodeChain<Self>, rule: &Rule<Self>, data: &mut Self::NodeData) -> DirtyFlags
         where Self: Sized;
+
+    /// Called after applying all relevant rules to reset any properties that
+    /// weren't set.
+    ///
+    /// This is needed because a node could have a property set previously and
+    /// then later (e.g. when a property is changed) no longer have it set.
+    /// Due to it no longer being set `update_data` would not be called for
+    /// that property leaving it stuck with its previous value.
+    ///
+    /// `used_keys` will contain every property key that was used by rules
+    /// in this update, if the key isn't in this set it should be reset.
     fn reset_unset_data(used_keys: &FnvHashSet<StaticKey>, data: &mut Self::NodeData) -> DirtyFlags;
+
+    /// Called with the flags of a node to allow the data to be updated
+    /// based on the dirty state of the node.
+    ///
+    /// This is useful to marking a node as needing a redraw when it
+    /// moves.
     fn check_flags(_data: &mut Self::NodeData, _flags: DirtyFlags) { }
 }
 
@@ -155,10 +404,13 @@ impl<E: Extension> Manager<E> {
         self.styles.layouts.insert(L::name(), Box::new(move || Box::new(creator())));
     }
 
-    /// Add a function that can be called by styles
+    /// Add a function that can be called by style rules
+    ///
+    /// Arguments are only parsed when obtained from the iterator
+    /// making unused parameters cheap.
     pub fn add_func_raw<F>(&mut self, name: &'static str, func: F)
     where
-        F: for<'a> Fn(&mut (Iterator<Item=Result<Value<E>, Error<'a>>> + 'a)) -> Result<Value<E>, Error<'a>> + 'static,
+        F: for<'a> Fn(&mut (Iterator<Item=FResult<'a, Value<E>>> + 'a)) -> FResult<'a, Value<E>> + 'static,
     {
         let key = self.styles.static_keys.entry(name).or_insert(StaticKey(name));
         self.styles.funcs.insert(*key, Box::new(func));
@@ -167,7 +419,7 @@ impl<E: Extension> Manager<E> {
     /// Adds the node to the root node of this manager.
     ///
     /// The node is created from the passed string.
-    /// See [`add_node_str`](struct.Node.html#from_str)
+    /// See [`from_str`](struct.Node.html#from_str)
     pub fn add_node_str<'a>(&mut self, node: &'a str) -> Result<(), syntax::PError<'a>> {
         self.add_node(Node::from_str(node)?);
         Ok(())
@@ -200,8 +452,7 @@ impl<E: Extension> Manager<E> {
 
     /// Loads a set of styles from the given string.
     ///
-    /// If a set of styles with the same name is already loaded
-    /// then this will replace them.
+    /// The name can be used to remove the loaded styles later
     pub fn load_styles<'a>(
         &mut self,
         name: &str,
@@ -220,6 +471,9 @@ impl<E: Extension> Manager<E> {
     }
 
     /// Positions the nodes in this manager.
+    ///
+    /// This will update nodes based on their properties and then
+    /// position them based on their selected layout.
     pub fn layout(&mut self, width: i32, height: i32) {
         let size = (width, height);
         let flags = if self.last_size != size {
@@ -265,8 +519,8 @@ impl<E: Extension> Manager<E> {
         }
     }
 
-    /// Renders the nodes in this manager by passing the
-    /// layout and styles to the passed visitor.
+    /// Renders the nodes in this manager by passing the draw position/size
+    /// and style properties to the visitor
     pub fn render<V>(&mut self, visitor: &mut V)
     where
         V: RenderVisitor<E>,
@@ -275,23 +529,29 @@ impl<E: Extension> Manager<E> {
     }
 }
 
-/// The position and size of an element
+/// The position and size of an node
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Rect {
+    /// The x position of the node
     pub x: i32,
+    /// The y position of the node
     pub y: i32,
+    /// The width of the node
     pub width: i32,
+    /// The height of the node
     pub height: i32,
 }
 
-/// Called for every element in a manager to allow them to
+/// Called for every node in a manager to allow them to
 /// be rendered.
 pub trait RenderVisitor<E: Extension> {
+    /// Called per node before visiting their children
     fn visit(&mut self, node: &mut NodeInner<E>);
+    /// Called per node after visiting their children
     fn visit_end(&mut self, node: &mut NodeInner<E>);
 }
 
-/// A node representing an element.
+/// A node representing an element or text.
 ///
 /// Can be cloned to duplicate the reference to the node.
 pub struct Node<E: Extension> {
@@ -306,6 +566,19 @@ impl<E: Extension> Clone for Node<E> {
     }
 }
 
+/// Tries to find and evalulate a given style property in a rule.
+///
+/// This will skip properties that have already been set previously
+/// in the update. Should only be used during an `update_(child_)data`
+/// call.
+///
+/// ```ignore
+/// eval!(styles, nc, rule.MY_PROP => val => {
+///     // This will only run if MY_PROP was set in the rule
+///     // val will be a `Value` containing what the property
+///     // was set too
+/// });
+/// ```
 #[macro_export]
 macro_rules! eval {
     ($styles:expr, $n:expr, $rule:ident.$key:expr => $ret:ident => $ok:block) => {
@@ -523,10 +796,16 @@ impl<E: Extension> Node<E> {
         }
     }
 
+    /// Returns an immutable reference to the
+    /// node's inner value
+    #[inline]
     pub fn borrow(&self) -> Ref<NodeInner<E>> {
         self.inner.borrow()
     }
 
+    /// Returns an mutable reference to the
+    /// node's inner value
+    #[inline]
     pub fn borrow_mut(&self) -> RefMut<NodeInner<E>> {
         self.inner.borrow_mut()
     }
@@ -600,6 +879,7 @@ impl<E: Extension> Node<E> {
 
     /// Returns a vector containing the child nodes of this
     /// node.
+    #[inline]
     pub fn children(&self) -> Vec<Node<E>> {
         if let NodeValue::Element(ref e) = self.inner.borrow().value {
             Clone::clone(&e.children)
@@ -619,6 +899,7 @@ impl<E: Extension> Node<E> {
     }
 
     /// Returns the name of the node if it has one
+    #[inline]
     pub fn name(&self) -> Option<String> {
         let inner = self.inner.borrow();
         match inner.value {
@@ -629,11 +910,13 @@ impl<E: Extension> Node<E> {
 
     /// Returns whether the passed node points to the same node
     /// as this one
+    #[inline]
     pub fn is_same(&self, other: &Node<E>) -> bool {
         Rc::ptr_eq(&self.inner, &other.inner)
     }
 
     /// Returns the text of the node if it is a text node.
+    #[inline]
     pub fn text(&self) -> Option<Ref<str>> {
         let inner = self.inner.borrow();
         ref_filter_map::ref_filter_map(inner, |v|
@@ -719,6 +1002,8 @@ impl<E: Extension> Node<E> {
         inner.properties.remove(key);
     }
 
+    /// Returns a copy of the value for the given property
+    /// if it exists.
     #[inline]
     pub fn get_property<V>(&self, key: &str) -> Option<V>
         where V: ConvertValue<E>
@@ -727,6 +1012,8 @@ impl<E: Extension> Node<E> {
         inner.get_property::<V>(key)
     }
 
+    /// Returns a reference to the value for the given property
+    /// if it exists.
     #[inline]
     pub fn get_property_ref<V>(&self, key: &str) -> Option<Ref<V::RefType>>
         where V: ConvertValue<E>
@@ -738,6 +1025,8 @@ impl<E: Extension> Node<E> {
         )
     }
 
+    /// Sets the value of a given property
+    #[inline]
     pub fn set_property<V>(&self, key: &str, v: V)
         where V: ConvertValue<E>
     {
@@ -746,6 +1035,16 @@ impl<E: Extension> Node<E> {
         inner.properties.insert(key.into(), V::to_value(v));
     }
 
+    /// Sets the value of a given property without flagging
+    /// the node as changed.
+    ///
+    /// This is useful for when properties are use as storage
+    /// and not used in style rules.
+    ///
+    /// As a general convention this properties should use keys
+    /// begining with `$` (e.g. `$cycle`) as these are not accepted
+    /// by the style parser.
+    #[inline]
     pub fn raw_set_property<V>(&self, key: &str, v: V)
         where V: ConvertValue<E>
     {
@@ -874,6 +1173,10 @@ impl<E: Extension> Clone for WeakNode<E> {
     }
 }
 
+/// The inner data of a single node.
+///
+/// `Node` is a wrapper around this to allow it to be passed
+/// around easily via reference counting.
 pub struct NodeInner<E: Extension> {
     parent: Option<Weak<RefCell<NodeInner<E>>>>,
     properties: FnvHashMap<String, Value<E>>,
@@ -883,12 +1186,21 @@ pub struct NodeInner<E: Extension> {
     // Set when added/removed from a node
     rules_dirty: bool,
     dirty_flags: DirtyFlags,
+    /// The value of the node.
+    ///
+    /// The value is either the name and children of
+    /// the node or the text of the node.
     pub value: NodeValue<E>,
+    /// Whether the text of this node has changed since
+    /// last viewed.
+    ///
+    /// The render visitor should reset this flag after viewing it
     pub text_changed: bool,
     layout: Box<dyn BoxLayoutEngine<E>>,
     parent_data: Box<dyn Any>,
     uses_parent_size: bool,
     prev_rect: Rect,
+    /// The current draw position of this node
     pub draw_rect: Rect,
     /// The scroll offset of all elements inside this one
     pub scroll_position: (f32, f32),
@@ -941,6 +1253,8 @@ impl <E> NodeInner<E>
             .and_then(|v| V::from_value(v))
     }
 
+    /// Returns a copy of the value for the given property
+    /// if it exists.
     #[inline]
     pub fn get_property<V>(&self, key: &str) -> Option<V>
         where V: ConvertValue<E>
@@ -949,13 +1263,15 @@ impl <E> NodeInner<E>
     }
 
     #[inline]
-    pub fn get_property_ref_impl<'a, V>(props: &'a FnvHashMap<String, Value<E>>, key: &str) -> Option<&'a V::RefType>
+    fn get_property_ref_impl<'a, V>(props: &'a FnvHashMap<String, Value<E>>, key: &str) -> Option<&'a V::RefType>
         where V: ConvertValue<E>
     {
         props.get(key)
             .and_then(|v| V::from_value_ref(v))
     }
 
+    /// Returns a reference to the value for the given property
+    /// if it exists.
     #[inline]
     pub fn get_property_ref<V>(&self, key: &str) -> Option<&V::RefType>
         where V: ConvertValue<E>
@@ -963,6 +1279,7 @@ impl <E> NodeInner<E>
         Self::get_property_ref_impl::<V>(&self.properties, key)
     }
 
+    /// Returns the text of the node if it is a text node.
     pub fn text(&self) -> Option<&str> {
         match self.value {
             NodeValue::Element(_) => None,
@@ -971,13 +1288,20 @@ impl <E> NodeInner<E>
     }
 }
 
+/// The value of a node.
+///
+/// Either an element with children or
+/// text node.
 pub enum NodeValue<E: Extension> {
+    /// An element node, with a name and children
     Element(Element<E>),
+    /// A text node
     Text(String),
 }
 
 impl <E: Extension> NodeValue<E> {
 
+    /// Returns the text of the node if it is a text node.
     pub fn text(&self) -> Option<&str> {
         match self {
             NodeValue::Element(_) => None,
@@ -986,11 +1310,15 @@ impl <E: Extension> NodeValue<E> {
     }
 }
 
+/// An element node
 pub struct Element<E: Extension> {
     name: String,
     children: Vec<Node<E>>,
 }
 
+/// A chain of nodes and their parents
+///
+/// Used during applying rules for quick traversal.
 pub struct NodeChain<'a, E: Extension + 'a> {
     parent: Option<&'a NodeChain<'a, E>>,
     value: NCValue<'a>,
@@ -1001,6 +1329,7 @@ pub struct NodeChain<'a, E: Extension + 'a> {
 impl <'a, E> NodeChain<'a, E>
     where E: Extension
 {
+    /// Returns the text of the node if it is a text node.
     pub fn text(&self) -> Option<&'a str> {
         match self.value {
             NCValue::Text(v) => Some(v),
@@ -1023,25 +1352,34 @@ impl <E: Extension> NodeValue<E> {
     }
 }
 
-/// A value that can be used as a style attribute
+/// A value that can be used as a style property
 #[derive(Debug)]
 pub enum Value<E: Extension> {
+    /// A boolean value
     Boolean(bool),
+    /// An integer value
     Integer(i32),
+    /// A floating point value
     Float(f64),
+    /// A string value
     String(String),
+    /// An extension defined value
     ExtValue(E::Value),
 }
 
 impl <E> Value<E>
     where E: Extension
 {
+    /// Attemps to convert this value into the given
+    /// type
     pub fn convert<V>(self) -> Option<V>
         where V: ConvertValue<E>
     {
         V::from_value(self)
     }
 
+    /// Attemps to convert a reference to this value into
+    /// the given reference type
     pub fn convert_ref<V>(&self) -> Option<&V::RefType>
         where V: ConvertValue<E>
     {
@@ -1092,10 +1430,20 @@ impl <'a, E> From<syntax::desc::ValueType<'a>> for Value<E>
     }
 }
 
+/// Types that can be converted to and from a value
 pub trait ConvertValue<E: Extension>: Sized {
+    /// The reference type of this value.
+    ///
+    /// Useful for types like `String` where the reference
+    /// type is `str`
     type RefType: ?Sized;
+
+    /// Tries to convert from the passed value to this type
     fn from_value(v: Value<E>) -> Option<Self>;
+    /// Tries to convert from the passed value to the reference
+    /// type.
     fn from_value_ref(v: &Value<E>) -> Option<&Self::RefType>;
+    /// Converts the value into a `Value`
     fn to_value(v: Self) -> Value<E>;
 }
 

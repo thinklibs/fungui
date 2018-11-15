@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 use super::*;
 
 pub enum TestExt{}
@@ -9,7 +10,7 @@ impl Extension for TestExt {
     type Value = ();
     fn new_data() -> TestData {
         TestData {
-            render_char: '~',
+            render_char: '#',
         }
     }
 
