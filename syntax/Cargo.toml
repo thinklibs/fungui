@@ -3,6 +3,13 @@ authors = ["Matthew Collins <me@thinkof.name>"]
 name = "fungui_syntax"
 version = "0.1.0"
 
+description = "A syntax parsing for fungui"
+license = "MIT / Apache-2.0"
+repository = "https://github.com/Thinkofname/fungui"
+documentation = "https://docs.rs/fungui-syntax"
+keywords = ["gui", "user-interface", "gamedev"]
+categories = ["gui"]
+
 [dependencies]
 combine = "3.6.1"
 fnv = "1.0.6"
