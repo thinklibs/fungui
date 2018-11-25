@@ -196,9 +196,8 @@ impl <E> Rules<E>
 
     // Kinda expensive but shouldn't be common
     pub fn remove_all_by_name(&mut self, name: &str) {
-        self.next.retain(|_k, v| {
+        self.next.values_mut().for_each(|v| {
             v.remove_all_by_name(name);
-            !v.matches.is_empty()
         });
         self.matches.retain(|v| v.name != name);
     }
