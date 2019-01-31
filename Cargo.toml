@@ -17,7 +17,7 @@ bitflags = "1.0.4"
 
 [dependencies.fungui_syntax]
 path = "./syntax"
-version = "0.1.0"
+version = "0.1.1"
 
 [workspace]
 members = [
