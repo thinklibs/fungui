@@ -1,4 +1,4 @@
-
+#![recursion_limit="128"]
 extern crate combine;
 extern crate fnv;
 
